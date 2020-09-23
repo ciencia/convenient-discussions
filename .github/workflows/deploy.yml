@@ -28,7 +28,7 @@ jobs:
 
           # Create a tunnel in the background, delete the key,
           # and set a TRAP to kill the tunnel on exit
-          ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org -i ~/.ssh/id_rsa &
+          ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org -vvvv &
           rm ~/.ssh/id_rsa
           trap "kill $!" EXIT
 
