@@ -14,8 +14,8 @@ jobs:
       - uses: actions/setup-node@v1
         with:
           node-version: 14
-      - run: npm ci
-      - run: npm run build --dev
+      # - run: npm ci
+      # - run: npm run build --dev
       - env:
           SSH_KEY: ${{ secrets.TOOLFORGE_KEY }}
           SSH_USER: ${{ secrets.TOOLFORGE_USER }}
@@ -35,4 +35,4 @@ jobs:
           trap "kill $!" EXIT
           
           # run user's own script to login and publish build results to pages
-          npm run deploy --dev --noi18n
+          # npm run deploy --dev --noi18n
