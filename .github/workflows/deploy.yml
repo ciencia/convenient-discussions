@@ -16,23 +16,10 @@ jobs:
           node-version: 14
       - run: npm ci
       - run: npm run build --dev
-      - env:
-          SSH_KEY: ${{ secrets.TOOLFORGE_KEY }}
-          SSH_USER: ${{ secrets.TOOLFORGE_USER }}
-          USERNAME: ${{ secrets.WIKI_USERNAME }}
-          PASSWORD: ${{ secrets.WIKI_PASSWORD }}
-        run: |
-          mkdir -p ${{ github.workspace }}/.ssh
-          echo -e "${SSH_KEY//_/\\n}" > ${{ github.workspace }}/.ssh/id_rsa
-          chmod og-rwx ${{ github.workspace }}/.ssh/id_rsa
-          cd ${{ github.workspace }}/.ssh
-          ls -la
-
-          # Create a tunnel in the background, delete the key,
-          # and set a TRAP to kill the tunnel on exit
-          ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org -i ${{ github.workspace }}/.ssh/id_rsa -vvvv
-          rm ${{ github.workspace }}/.ssh/id_rsa
-          trap "kill $!" EXIT
-
-          # run user's own script to login and publish build results to pages
-          npm run deploy --dev --noi18n
+      - name: test connection
+        uses: appleboy/ssh-action@v0.1.2
+        with:
+          host: "tools-login.wmflabs.org"
+          username: ${{ secrets.TOOLFORGE_USER }}
+          key: ${{ secrets.TOOLFORGE_KEY }}
+          script: ls
