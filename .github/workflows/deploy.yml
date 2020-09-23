@@ -25,10 +25,11 @@ jobs:
           mkdir -p ~/.ssh
           echo -e "${SSH_KEY//_/\\n}" > ~/.ssh/id_rsa
           chmod og-rwx ~/.ssh/id_rsa
+          pwd
 
           # Create a tunnel in the background, delete the key,
           # and set a TRAP to kill the tunnel on exit
-          ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org -vvvv
+          ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org -i ~/.ssh/id_rsa -vvvv
           rm ~/.ssh/id_rsa
           trap "kill $!" EXIT
 
