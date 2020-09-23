@@ -54,6 +54,7 @@ const client = new Mw({
   protocol: config.protocol,
   server: config.server,
   path: config.scriptPath,
+  proxy: config.proxy,
   debug: false,
 });
 
