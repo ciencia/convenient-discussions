@@ -27,6 +27,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           cd ~/.ssh
           ls -la
+          pwd
           
           # Create a tunnel in the background, delete the key,
           # and set a TRAP to kill the tunnel on exit
