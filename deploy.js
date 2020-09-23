@@ -55,7 +55,7 @@ const client = new Mw({
   server: config.server,
   path: config.scriptPath,
   proxy: config.proxy,
-  debug: false,
+  debug: true,
 });
 
 let branch;
