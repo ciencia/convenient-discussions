@@ -14,8 +14,8 @@ jobs:
       - uses: actions/setup-node@v1
         with:
           node-version: 14
-      # - run: npm ci
-      # - run: npm run build --dev
+      - run: npm ci
+      - run: npm run build --dev
       - env:
           SSH_KEY: ${{ secrets.TOOLFORGE_KEY }}
           SSH_USER: ${{ secrets.TOOLFORGE_USER }}
