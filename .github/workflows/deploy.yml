@@ -23,21 +23,18 @@ jobs:
           PASSWORD: ${{ secrets.WIKI_PASSWORD }}
         run: |
           mkdir -p ~/.ssh
-          echo -e "${SSH_KEY//_/\\n}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          cd ~/.ssh
+          echo -e "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
           
           eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/deploy_key
+          ssh-add ~/.ssh/id_rsa
           ssh-keyscan -H tools-login.wmflabs.org >> ~/.ssh/known_hosts
           
-          # Create a tunnel in the background, delete the key,
-          # and set a TRAP to kill the tunnel on exit
-          ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org -i ~/.ssh/deploy_key "ls -la" # -vvvv
-          ls -la
-          rm ~/.ssh/deploy_key
-          
+          # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
+          # exit.
+          ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org
+          rm ~/.ssh/id_rsa
           # trap "kill $!" EXIT
           
-          # run user's own script to login and publish build results to pages
+          # Run the user's own script to login and publish build results to pages.
           # npm run deploy --dev --noi18n
