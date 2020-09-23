@@ -23,16 +23,16 @@ jobs:
           PASSWORD: ${{ secrets.WIKI_PASSWORD }}
         run: |
           mkdir -p ~/.ssh
-          echo -e "${SSH_KEY//_/\\n}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          echo -e "${SSH_KEY//_/\\n}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
           cd ~/.ssh
-          ls -la
-          pwd
+          
+          ssh-keyscan -H tools-login.wmflabs.org >> ~/.ssh/known_hosts
           
           # Create a tunnel in the background, delete the key,
           # and set a TRAP to kill the tunnel on exit
           ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org -vvvv
-          rm ~/.ssh/id_rsa
+          rm ~/.ssh/deploy_key
           trap "kill $!" EXIT
           
           # run user's own script to login and publish build results to pages
