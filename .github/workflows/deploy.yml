@@ -27,6 +27,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           cd ~/.ssh
           
+          ssh-add ~/.ssh/deploy_key
           ssh-keyscan -H tools-login.wmflabs.org >> ~/.ssh/known_hosts
           
           # Create a tunnel in the background, delete the key,
