@@ -33,9 +33,11 @@ jobs:
           
           # Create a tunnel in the background, delete the key,
           # and set a TRAP to kill the tunnel on exit
-          ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org -i ~/.ssh/deploy_key -vvvv
+          ssh ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org -i ~/.ssh/deploy_key # -vvvv
+          ls -la
           rm ~/.ssh/deploy_key
-          trap "kill $!" EXIT
+          
+          # trap "kill $!" EXIT
           
           # run user's own script to login and publish build results to pages
           # npm run deploy --dev --noi18n
