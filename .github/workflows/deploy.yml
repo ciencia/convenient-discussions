@@ -26,12 +26,9 @@ jobs:
           echo -e "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_rsa
-          ssh-keyscan -H tools-dev.wmflabs.org >> ~/.ssh/known_hosts
           # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
           # exit.
-          ssh -N -D localhost:8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
+          ssh -4 -o StrictHostKeyChecking=no -N -D localhost:8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
           rm ~/.ssh/id_rsa
           # Kill the background job on exit
           trap "kill $!" EXIT
