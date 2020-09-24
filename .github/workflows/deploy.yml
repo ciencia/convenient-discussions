@@ -35,14 +35,14 @@ jobs:
 
           # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
           # exit.
-          ssh -N -D 8080 ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org &
+          ssh -N -D 5001 ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org &
           SSH_JOB="$!"
           rm ~/.ssh/id_rsa
           
           # This trap will get overrided below, but also set it here just in case HPTS fails to start
           trap "kill $SSH_JOB" EXIT
 
-          ./node_modules/.bin/hpts -s 127.0.0.1:8080 -p 8433 &
+          ./node_modules/.bin/hpts -s 127.0.0.1:5001 -p 8080 &
           HPTS_JOB="$!"
 
           # Kill both background jobs on exit
