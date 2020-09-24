@@ -28,17 +28,17 @@ jobs:
           
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
-          ssh-keyscan -H tools-login.wmflabs.org >> ~/.ssh/known_hosts
+          ssh-keyscan -H tools-dev.wmflabs.org >> ~/.ssh/known_hosts
 
           # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
           # exit.
-          ssh -N -D 8449 ${{ secrets.TOOLFORGE_USER }}@tools-login.wmflabs.org &
+          ssh -N -D 8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
           rm ~/.ssh/id_rsa
 
           # Kill the background job on exit
           trap "kill $!" EXIT
           
-          curl -L -x socks5h://localhost:8449 https://ru.wikipedia.org/
+          curl -L -x socks5h://localhost:8443 https://ru.wikipedia.org/
           
           # Run the user's own script to login and publish build results to pages.
           # npm run deploy --dev --noi18n
