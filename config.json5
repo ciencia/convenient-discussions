@@ -1,7 +1,7 @@
 {
   protocol: 'https',
   server: 'commons.wikimedia.org',
-  proxy: 'https://localhost:8443',
+  proxy: 'http://localhost:8443',
 
   // No ending slash, as in `mw.config.get('wgScriptPath')`
   scriptPath: '/w',
