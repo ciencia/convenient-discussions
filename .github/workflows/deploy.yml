@@ -1,14 +1,11 @@
 name: Deploy to Commons
 
-on:
-  release:
-    types:
-      - published
-  workflow_dispatch:
+on: [push]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    container: node
     steps:
       - env:
           SSH_KEY: ${{ secrets.TOOLFORGE_KEY }}
@@ -16,6 +13,13 @@ jobs:
           USERNAME: ${{ secrets.WIKI_USERNAME }}
           PASSWORD: ${{ secrets.WIKI_PASSWORD }}
         run: |
+          echo -e "$SSH_KEY" | md5sum
+          echo -e "$SSH_KEY" | head -c 40
+          echo -e "HOME=$HOME"
+          echo -e "NODE_VERSION=$NODE_VERSION"
+          echo -e "HOSTNAME=$HOSTNAME"
+          echo -e "PATH=$PATH"          
+          
           mkdir -p ~/.ssh
           echo -e "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
