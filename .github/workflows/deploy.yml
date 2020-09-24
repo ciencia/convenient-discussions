@@ -29,9 +29,13 @@ jobs:
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
           ssh-keyscan -H tools-dev.wmflabs.org >> ~/.ssh/known_hosts
+          
+          sleep 3
+          
           # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
           # exit.
-          ssh -vvvv -N -D localhost:8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
+          # ssh -vvvv -N -D localhost:8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
+          timeout 10s ssh -v -4 -o StrictHostKeyChecking=no -N -D 8080 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
           rm ~/.ssh/id_rsa
           # Kill the background job on exit
           trap "kill $!" EXIT
