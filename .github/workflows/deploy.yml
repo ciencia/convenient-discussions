@@ -10,12 +10,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v1
-        with:
-          node-version: 14
-      # - run: npm ci
-      # - run: npm run build --dev
       - env:
           SSH_KEY: ${{ secrets.TOOLFORGE_KEY }}
           SSH_USER: ${{ secrets.TOOLFORGE_USER }}
@@ -25,15 +19,11 @@ jobs:
           mkdir -p ~/.ssh
           echo -e "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          
-          # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
-          # exit.
-          ssh -4 -o StrictHostKeyChecking=no -N -D localhost:8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
+
+          ssh -4 -o StrictHostKeyChecking=no -N -D 8080 yurik@tools-login.wmflabs.org &
+          SSH_JOB=$!
+          trap "kill $SSH_JOB" EXIT
+          sleep 1
           rm ~/.ssh/id_rsa
-          # Kill the background job on exit
-          trap "kill $!" EXIT
-          
+
           curl -L -x socks5h://localhost:8443 https://ru.wikipedia.org/
-          
-          # Run the user's own script to login and publish build results to pages.
-          # npm run deploy --dev --noi18n
