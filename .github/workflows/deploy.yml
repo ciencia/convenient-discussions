@@ -38,7 +38,7 @@ jobs:
           # Kill the background job on exit
           trap "kill $!" EXIT
           
-          sleep 3
+          sleep 5
           
           curl -L -x socks5h://localhost:8443 https://ru.wikipedia.org/
           
