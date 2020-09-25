@@ -29,14 +29,26 @@ jobs:
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
           ssh-keyscan -H tools-dev.wmflabs.org >> ~/.ssh/known_hosts
+
+          # TODO: move to package.json as a dev tool
+          npm install http-proxy-to-socks
           
           # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
           # exit.
           # ssh -vvvv -N -D localhost:8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
           timeout 10s ssh -v -4 -o StrictHostKeyChecking=no -N -D 8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
+          SSH_JOB="$!"
           rm ~/.ssh/id_rsa
-          # Kill the background job on exit
-          trap "kill $!" EXIT
+          
+          # This trap will get overrided below, but also set it here just in case HPTS fails to start
+          trap "kill $SSH_JOB" EXIT
+          
+          sleep 5
+          
+          ./node_modules/.bin/hpts -s 127.0.0.1:8080 -p 8433 &
+          HPTS_JOB="$!"
+          # Kill both background jobs on exit
+          trap "kill $SSH_JOB ; kill $HPTS_JOB" EXIT
           
           sleep 5
           
