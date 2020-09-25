@@ -45,7 +45,7 @@ jobs:
           
           sleep 5
           
-          ./node_modules/.bin/hpts -s 127.0.0.1:8080 -p 8433 &
+          ./node_modules/.bin/hpts -s 127.0.0.1:8433 -p 8080 &
           HPTS_JOB="$!"
           # Kill both background jobs on exit
           trap "kill $SSH_JOB ; kill $HPTS_JOB" EXIT
