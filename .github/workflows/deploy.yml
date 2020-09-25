@@ -36,7 +36,7 @@ jobs:
           # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
           # exit.
           # ssh -vvvv -N -D localhost:8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
-          timeout 15s ssh -v -4 -o StrictHostKeyChecking=no -N -D 8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
+          timeout 30s ssh -v -4 -o StrictHostKeyChecking=no -N -D 8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
           SSH_JOB="$!"
           rm ~/.ssh/id_rsa
           
