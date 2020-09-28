@@ -26,33 +26,27 @@ jobs:
           echo -e "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_rsa
-          ssh-keyscan -H tools-dev.wmflabs.org >> ~/.ssh/known_hosts
-
-          # TODO: move to package.json as a dev tool
           npm install http-proxy-to-socks
-          
+
           # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
           # exit.
-          # ssh -vvvv -N -D localhost:8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
-          timeout 30s ssh -v -4 -o StrictHostKeyChecking=no -N -D 8443 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
+          ssh -v -o StrictHostKeyChecking=no -N -D 1081 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
           SSH_JOB="$!"
           rm ~/.ssh/id_rsa
-          
-          # This trap will get overrided below, but also set it here just in case HPTS fails to start
+
+          # This trap will get overrided below, but also set it here just in case HPTS fails to
+          # start
           trap "kill $SSH_JOB" EXIT
-          
-          sleep 5
-          
-          ./node_modules/.bin/hpts -s 127.0.0.1:8443 -p 8080 &
+
+          sleep 1
+
+          ./node_modules/.bin/hpts -s 127.0.0.1:1081 -p 8080 &
           HPTS_JOB="$!"
+
           # Kill both background jobs on exit
-          trap "kill $SSH_JOB ; kill $HPTS_JOB" EXIT
-          
-          sleep 5
-          
-          # curl -L -x socks5h://localhost:8443 https://ru.wikipedia.org/
-          
-          # Run the user's own script to login and publish build results to pages.
+          trap "kill $SSH_JOB; kill $HPTS_JOB" EXIT
+
+          sleep 1
+
+          # run user's own script to login and publish build results to pages
           npm run deploy --dev --noi18n
