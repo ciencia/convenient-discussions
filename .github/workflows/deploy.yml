@@ -37,8 +37,7 @@ jobs:
           # start
           trap "kill $SSH_JOB" EXIT
 
-          sleep 5
-          
+          sleep 1
           rm ~/.ssh/id_rsa
 
           ./node_modules/.bin/hpts -s 127.0.0.1:1081 -p 8080 &
@@ -47,7 +46,7 @@ jobs:
           # Kill both background jobs on exit
           trap "kill $SSH_JOB; kill $HPTS_JOB" EXIT
 
-          sleep 5
+          sleep 1
 
           # run user's own script to login and publish build results to pages
           npm run deploy --dev --noi18n
