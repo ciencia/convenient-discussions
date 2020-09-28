@@ -25,12 +25,12 @@ jobs:
           mkdir -p ~/.ssh
           echo -e "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          
+
           npm install http-proxy-to-socks
 
           # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
           # exit.
-          ssh -v -o StrictHostKeyChecking=no -N -D 1081 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
+          ssh -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -N -D 1081 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
           SSH_JOB="$!"
           rm ~/.ssh/id_rsa
 
@@ -38,7 +38,7 @@ jobs:
           # start
           trap "kill $SSH_JOB" EXIT
 
-          sleep 3
+          sleep 5
 
           ./node_modules/.bin/hpts -s 127.0.0.1:1081 -p 8080 &
           HPTS_JOB="$!"
@@ -46,7 +46,7 @@ jobs:
           # Kill both background jobs on exit
           trap "kill $SSH_JOB; kill $HPTS_JOB" EXIT
 
-          sleep 3
+          sleep 5
 
           # run user's own script to login and publish build results to pages
           npm run deploy --dev --noi18n
