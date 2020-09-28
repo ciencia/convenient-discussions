@@ -30,15 +30,12 @@ jobs:
 
           # Create a tunnel in the background, delete the key, and set a TRAP to kill the tunnel on
           # exit.
-          ssh -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -N -D 1081 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
+          ssh -o StrictHostKeyChecking=no -N -D 1081 ${{ secrets.TOOLFORGE_USER }}@tools-dev.wmflabs.org &
           SSH_JOB="$!"
 
           # This trap will get overrided below, but also set it here just in case HPTS fails to
           # start
           trap "kill $SSH_JOB" EXIT
-
-          sleep 1
-          rm ~/.ssh/id_rsa
 
           ./node_modules/.bin/hpts -s 127.0.0.1:1081 -p 8080 &
           HPTS_JOB="$!"
@@ -47,6 +44,7 @@ jobs:
           trap "kill $SSH_JOB; kill $HPTS_JOB" EXIT
 
           sleep 1
+          rm ~/.ssh/id_rsa
 
           # run user's own script to login and publish build results to pages
           npm run deploy --dev --noi18n
