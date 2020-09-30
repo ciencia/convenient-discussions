@@ -1868,7 +1868,7 @@ export default class CommentForm {
       `^(?:<\\/${cd.g.PNIE_PATTERN}>|<${cd.g.PNIE_PATTERN}|\\|)`,
       'i'
     );
-    const headingRegexp = /^(=+).*\1$/;
+    const headingRegexp = /^(=+).*\1[ \t]*$/;
     code = code.replace(
       /^((?![:*# ]).+)\n(?![\n:*# \x03])(?=(.*))/gm,
       (s, thisLine, nextLine) => {
@@ -2631,7 +2631,7 @@ export default class CommentForm {
     );
     if (!editTimestamp) return;
 
-    // Here we use a hack where we pass, in keptData, the name of the section that was set to be
+    // Here we use a trick where we pass, in keptData, the name of the section that was set to be
     // watched/unwatched using a checkbox in a form just sent. The server doesn't manage to update
     // the value quickly enough, so it returns the old value, but we must display the new one.
     let keptData = { didSubmitCommentForm: true };
@@ -2673,10 +2673,10 @@ export default class CommentForm {
     }
 
     if (this.watchCheckbox.isSelected() && $('#ca-watch').length) {
-      $('#ca-watch').attr('id', 'cd-unwatch');
+      $('#ca-watch').attr('id', 'ca-unwatch');
     }
     if (!this.watchCheckbox.isSelected() && $('#ca-unwatch').length) {
-      $('#ca-unwatch').attr('id', 'cd-watch');
+      $('#ca-unwatch').attr('id', 'ca-watch');
     }
 
     if (!doDelete) {
