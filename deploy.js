@@ -121,14 +121,7 @@ function requestComments() {
       }
       const revisions = info?.pages?.[0]?.revisions || [];
       if (revisions.length || info?.pages?.[0]?.missing) {
-        getLastDeployedCommit(revisions).catch((e) => {
-          // Node: "Unhandled promise rejections are deprecated. In the future, promise rejections
-          // that are not handled will terminate the Node.js process with a non-zero exit code." -
-          // So currently they are not terminating the process with a non-zero exit code, while we
-          // need this behavior to see that the process has failed in GitHub Actions.
-          console.log('throwing...');
-          throw e;
-        });
+        getLastDeployedCommit(revisions);
       } else {
         console.log('Couldn\'t load the revisions data.');
       }
@@ -136,7 +129,7 @@ function requestComments() {
   );
 }
 
-async function getLastDeployedCommit(revisions) {
+function getLastDeployedCommit(revisions) {
   let lastDeployedCommit;
   revisions.some((revision) => {
     [lastDeployedCommit] = revision.comment.match(/\b[0-9a-f]{7}(?= @)/) || [];
@@ -152,16 +145,10 @@ async function getLastDeployedCommit(revisions) {
       .map((commit) => commit.subject);
   }
 
-  try {
-    await prepareEdits();
-  } catch (e) {
-    console.log('throwing_...');
-    throw e;
-  }
+  prepareEdits();
 }
 
 async function prepareEdits() {
-  throw 'test rejection';
   files.forEach((file, i) => {
     let content;
     content = fs.readFileSync(`./dist/${file}`).toString();
