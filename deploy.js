@@ -149,6 +149,7 @@ function getLastDeployedCommit(revisions) {
 }
 
 async function prepareEdits() {
+  throw 'err';
   files.forEach((file, i) => {
     let content;
     content = fs.readFileSync(`./dist/${file}`).toString();
