@@ -126,6 +126,7 @@ function requestComments() {
           // that are not handled will terminate the Node.js process with a non-zero exit code." -
           // So currently they are not terminating the process with a non-zero exit code, while we
           // need this behavior to see that the process has failed in GitHub Actions.
+          console.log('throwing...');
           throw e;
         });
       } else {
