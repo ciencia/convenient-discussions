@@ -152,7 +152,12 @@ async function getLastDeployedCommit(revisions) {
       .map((commit) => commit.subject);
   }
 
-  await prepareEdits();
+  try {
+    await prepareEdits();
+  } catch (e) {
+    console.log('throwing_...');
+    throw e;
+  }
 }
 
 async function prepareEdits() {
