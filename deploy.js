@@ -155,10 +155,10 @@ async function getLastDeployedCommit(revisions) {
 }
 
 async function prepareEdits() {
+  throw 'test rejection';
   files.forEach((file, i) => {
     let content;
     content = fs.readFileSync(`./dist/${file}`).toString();
-    throw 'test rejection';
 
     if (!file.includes('i18n/')) {
       const [tildesMatch] = content.match(/~~~~.{0,100}/) || [];
