@@ -136,6 +136,7 @@ function getLastDeployedCommit(revisions) {
   revisions.some((revision) => {
     [, lastDeployedCommit] = revision.comment.match(/[uU]pdate to ([0-9a-f]{7})(?= @ )/) || [];
     [, lastDeployedVersion] = revision.comment.match(/[uU]pdate to (v\d+\.\d+\.\d+\b)/) || [];
+    console.log(revision, lastDeployedCommit, lastDeployedVersion);
     return lastDeployedCommit || lastDeployedVersion;
   });
   if (lastDeployedCommit || lastDeployedVersion) {
