@@ -83,7 +83,7 @@ let newCommitsCount;
 let newCommitsSubjects;
 let edits = [];
 
-exec('t rev-parse --abbrev-ref HEAD && git log --pretty=format:"%h %s"', parseCmdOutput);
+exec('git rev-parse --abbrev-ref HEAD && git log --pretty=format:"%h %s"', parseCmdOutput);
 
 function parseCmdOutput(err, stdout, stderr) {
   if (stdout === '') {
