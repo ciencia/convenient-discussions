@@ -83,7 +83,7 @@ let newCommitsCount;
 let newCommitsSubjects;
 let edits = [];
 
-exec('git rev-parse --abbrev-ref HEAD && git log -n 1000 --pretty=format:"%h%n%s%nrefs: %D%n"', parseCmdOutput);
+exec('git rev-parse --abbrev-ref HEAD && git log -1000 --pretty=format:"%h%n%s%nrefs: %D%n"', parseCmdOutput);
 
 function parseCmdOutput(err, stdout, stderr) {
   if (stdout === '') {
@@ -97,8 +97,9 @@ function parseCmdOutput(err, stdout, stderr) {
   branch = stdout.slice(0, stdout.indexOf('\n'));
   stdout = stdout.slice(stdout.indexOf('\n') + 1);
   const groups = stdout.split('\n\n');
-  console.log(stdout.slice(0, 5000));
+  console.log(stdout.slice(0, 500));
   console.log(groups);
+  return;
   commits = groups.map((line) => {
     const [, hash, subject, refs] = line.match(/^(.+)\n(.+)\n(.+)/);
     const [, tag] = refs.match(/tag: ([^,]+)/) || [null, null];
