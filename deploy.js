@@ -83,7 +83,7 @@ let newCommitsCount;
 let newCommitsSubjects;
 let edits = [];
 
-exec('git rev-parse --abbrev-ref HEAD && git log --pretty=format:"%h %s"', parseCmdOutput);
+exec('git rev-parse --abbrev-ref HEAD && git log --max-count=10 --pretty=format:"%h %s"', parseCmdOutput);
 
 function parseCmdOutput(err, stdout, stderr) {
   if (stdout === '') {
@@ -94,7 +94,7 @@ function parseCmdOutput(err, stdout, stderr) {
     error(stderr);
   }
 
-  console.log(stdout.slice(0, 500));
+  console.log('|' + stdout.slice(0, 5000) + '|');
 
   branch = stdout.slice(0, stdout.indexOf('\n'));
   stdout = stdout.slice(stdout.indexOf('\n') + 1);
