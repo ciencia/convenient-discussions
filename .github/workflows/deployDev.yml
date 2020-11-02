@@ -15,6 +15,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions/setup-node@v1
         with:
+          fetch-depth: 1000
           node-version: 14
       - run: npm ci
       - name: Create a SSH tunnel and deploy
