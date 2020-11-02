@@ -136,14 +136,16 @@ function getLastDeployedCommit(revisions) {
   revisions.some((revision) => {
     [, lastDeployedCommit] = revision.comment.match(/[uU]pdate to ([0-9a-f]{7})(?= @ )/) || [];
     [, lastDeployedVersion] = revision.comment.match(/[uU]pdate to (v\d+\.\d+\.\d+\b)/) || [];
-    console.log(revision, lastDeployedCommit, lastDeployedVersion);
     return lastDeployedCommit || lastDeployedVersion;
   });
+  lastDeployedCommit = '516c349';
   if (lastDeployedCommit || lastDeployedVersion) {
+    console.log(commits);
     newCommitsCount = commits.findIndex((commit) => (
       commit.hash === lastDeployedCommit ||
       commit.tag === lastDeployedVersion
     ));
+    console.newCommitsCount(commits);
     if (newCommitsCount === -1) {
       newCommitsCount = 0;
     }
@@ -213,6 +215,8 @@ async function prepareEdits() {
     ))
     .join('\n');
   console.log(`Gonna make these edits:\n\n${overview}`);
+
+  return;
 
   if (process.env.CI) {
     logIn();
