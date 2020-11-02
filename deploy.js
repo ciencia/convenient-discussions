@@ -145,7 +145,7 @@ function getLastDeployedCommit(revisions) {
       commit.hash === lastDeployedCommit ||
       commit.tag === lastDeployedVersion
     ));
-    console.newCommitsCount(commits);
+    console.log(newCommitsCount);
     if (newCommitsCount === -1) {
       newCommitsCount = 0;
     }
