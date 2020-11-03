@@ -14,6 +14,8 @@ import { defined, firstCharToUpperCase, flat, isInline, underlinesToSpaces } fro
 import { generateCommentAnchor, parseTimestamp, registerCommentAnchor } from './timestamp';
 
 let foreignComponentClasses;
+let timezoneRegexp;
+let signatureEndingRegexp;
 
 /**
  * Get the page name from a URL.
@@ -69,24 +71,35 @@ function getPageNameFromUrl(url) {
  */
 function getUserNameFromLink(element) {
   const href = element.getAttribute('href');
-  if (!href) {
-    return null;
-  }
-  const pageName = getPageNameFromUrl(href);
-  if (!pageName) {
-    return null;
-  }
   let userName;
-  const match = pageName.match(cd.g.USER_NAMESPACES_REGEXP);
-  if (match) {
-    userName = match[1];
-  } else if (pageName.startsWith(cd.g.CONTRIBS_PAGE + '/')) {
-    userName = pageName.replace(cd.g.CONTRIBS_PAGE_LINK_REGEXP, '');
-    if (cd.g.IS_IPv6_ADDRESS(userName)) {
-      userName = userName.toUpperCase();
+  if (href) {
+    const pageName = getPageNameFromUrl(href);
+    if (!pageName) {
+      return null;
+    }
+    const match = pageName.match(cd.g.USER_NAMESPACES_REGEXP);
+    if (match) {
+      userName = match[1];
+    } else if (pageName.startsWith(cd.g.CONTRIBS_PAGE + '/')) {
+      userName = pageName.replace(cd.g.CONTRIBS_PAGE_LINK_REGEXP, '');
+      if (cd.g.IS_IPv6_ADDRESS(userName)) {
+        userName = userName.toUpperCase();
+      }
+    }
+    userName = (
+      userName &&
+      firstCharToUpperCase(underlinesToSpaces(userName.replace(/\/.*/, ''))).trim()
+    );
+  } else {
+    if (element.classList.contains('mw-selflink') && cd.g.CURRENT_NAMESPACE_NUMBER === 3) {
+      // Comments of users that have only the user talk page link in their signature on their talk
+      // page.
+      userName = cd.g.CURRENT_PAGE_TITLE;
+    } else {
+      return null;
     }
   }
-  return userName && firstCharToUpperCase(underlinesToSpaces(userName.replace(/\/.*/, ''))).trim();
+  return userName;
 }
 
 /**
@@ -102,9 +115,17 @@ export default class Parser {
   constructor(context) {
     this.context = context;
 
-    foreignComponentClasses = ['cd-commentPart', ...cd.config.closedDiscussionClasses];
-    if (cd.g.specialElements.pageHasOutdents) {
-      foreignComponentClasses.push('outdent-template');
+    if (!foreignComponentClasses) {
+      foreignComponentClasses = ['cd-commentPart', ...cd.config.closedDiscussionClasses];
+      if (cd.g.specialElements.pageHasOutdents) {
+        foreignComponentClasses.push('outdent-template');
+      }
+
+      timezoneRegexp = new RegExp(cd.g.TIMEZONE_REGEXP.source + '\\s*$');
+
+      if (cd.config.signatureEndingRegexp) {
+        signatureEndingRegexp = new RegExp(cd.config.signatureEndingRegexp.source + '$');
+      }
     }
   }
 
@@ -422,8 +443,6 @@ export default class Parser {
       lastStep: 'start',
     });
 
-    const timezoneRegexp = new RegExp(cd.g.TIMEZONE_REGEXP.source + '\\s*$');
-
     // 500 seems to be a safe enough value in case of any weird reasons for an infinite loop.
     for (let i = 0; i < 500; i++) {
       // lastStep may be:
@@ -445,7 +464,7 @@ export default class Parser {
           // https://ru.wikipedia.org/w/index.php?diff=107487558
           !isInline(previousPart.node, true) &&
 
-          (timezoneRegexp.test(text) || cd.config.signatureEndingRegexp?.test(text))
+          (timezoneRegexp.test(text) || signatureEndingRegexp?.test(text))
         ) {
           previousPart.hasForeignComponents = true;
           break;
