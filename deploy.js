@@ -61,7 +61,7 @@ let version;
 if (process.env.CI) {
   // HTTP proxy to use with the http-proxy-to-socks module, while the SOCKS proxy is created by the
   // `ssh -D [port]` command as part of the SSH tunnel to Toolforge.
-  config.proxy = 'http://localhost:8080';
+  //config.proxy = 'http://localhost:8080';
 
   const eventJson = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH));
 
