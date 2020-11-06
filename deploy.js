@@ -138,7 +138,7 @@ function getLastDeployedCommit(revisions) {
     [, lastDeployedVersion] = revision.comment.match(/[uU]pdate to (v\d+\.\d+\.\d+\b)/) || [];
     return lastDeployedCommit || lastDeployedVersion;
   });
-  lastDeployedCommit = '516c349';
+  console.log(lastDeployedCommit);
   if (lastDeployedCommit || lastDeployedVersion) {
     console.log(commits);
     newCommitsCount = commits.findIndex((commit) => (
