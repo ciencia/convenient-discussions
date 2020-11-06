@@ -97,6 +97,7 @@ function parseCmdOutput(err, stdout, stderr) {
   branch = stdout.slice(0, stdout.indexOf('\n'));
   stdout = stdout.slice(stdout.indexOf('\n') + 1);
   const groups = stdout.split('\n\n');
+  console.log(groups.slice(0, 5000))
   commits = groups.map((line) => {
     const [, hash, subject, refs] = line.match(/^(.+)\n(.+)\n(.+)/);
     const [, tag] = refs.match(/tag: ([^,]+)/) || [null, null];
