@@ -92,24 +92,26 @@ function parse() {
     }
   });
 
+  cd.debug.startTimer('prepare comments and sections');
+  cd.sections.forEach((section) => {
+    section.parentTree = section.getParentTree();
+    section.firstCommentAnchor = section.comments[0]?.anchor;
+  });
+
   cd.comments.forEach((comment) => {
     comment.getChildren().forEach((reply) => {
       reply.parent = comment;
     });
     const section = comment.getSection();
-    comment.section = section ?
-      {
-        headline: section.headline,
-        anchor: section.anchor,
-        firstCommentAnchor: section.comments[0]?.anchor,
-        index: section.id,
-      } :
-      null;
+    comment.section = section ? keepWorkerSafeValues(section) : null;
     if (comment.parent) {
       comment.parentAuthorName = comment.parent.authorName;
       comment.toMe = comment.parent.isOwn;
     }
+    comment.rawHtml = comment.elements.map((element) => element.outerHTML).join('\n');
+    comment.elementsCount = comment.elements.length;
   });
+  cd.debug.logAndResetTimer('prepare comments and sections');
 }
 
 /**
@@ -154,7 +156,7 @@ function onMessageFromWindow(e) {
     clearTimeout(alarmTimeout);
   }
 
-  if (message.type === 'parse') {
+  if (message.type.startsWith('parse')) {
     cd.debug.startTimer('worker operations');
 
     Object.assign(cd.g, message.g);
@@ -182,7 +184,7 @@ function onMessageFromWindow(e) {
     parse();
 
     postMessage({
-      type: 'parse',
+      type: message.type,
       revisionId: message.revisionId,
       comments: cd.comments.map(keepWorkerSafeValues),
       sections: cd.sections.map(keepWorkerSafeValues),

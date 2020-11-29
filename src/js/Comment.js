@@ -36,6 +36,7 @@ import {
   removeWikiMarkup,
 } from './wikitext';
 import { getUserGenders, parseCode } from './apiWrappers';
+import { reloadPage } from './boot';
 
 let thanks;
 
@@ -163,6 +164,35 @@ export default class Comment extends CommentSkeleton {
      * @type {boolean}
      */
     this.isFocused = false;
+
+    /**
+     * Was the comment edited since the previous visit.
+     *
+     * @type {?boolean}
+     */
+    this.isEditedSincePreviousVisit = null;
+
+    /**
+     * Was the comment edited while the page was idle. (The new version may be rendered or may be
+     * not, if the layout is too complex.)
+     *
+     * @type {?boolean}
+     */
+    this.isEdited = null;
+
+    /**
+     * Was the comment deleted while the page was idle.
+     *
+     * @type {?boolean}
+     */
+    this.isDeleted = null;
+
+    /**
+     * Should the comment be flashed when it appears in sight.
+     *
+     * @type {?boolean}
+     */
+    this.isFlashOnSightSet = false;
   }
 
   /**
@@ -550,11 +580,11 @@ export default class Comment extends CommentSkeleton {
 
     // Add classes if the comment wasn't moved. If it was moved, the layers are removed and created
     // again when the next event fires.
-    if (!isMoved && this.underlay) {
-      this.underlay.classList.add('cd-commentUnderlay-focused');
-      this.overlay.classList.add('cd-commentOverlay-focused');
-      this.isFocused = true;
-    }
+    if (isMoved || !this.underlay) return;
+
+    this.underlay.classList.add('cd-commentUnderlay-focused');
+    this.overlay.classList.add('cd-commentOverlay-focused');
+    this.isFocused = true;
   }
 
   /**
@@ -570,6 +600,20 @@ export default class Comment extends CommentSkeleton {
   }
 
   /**
+   * Get the comment's current background color, be it an underlay color or regular background
+   * color.
+   *
+   * @returns {string}
+   */
+  getCurrentBackgroundColor() {
+    let color = window.getComputedStyle(this.$underlay.get(0)).backgroundColor;
+    if (color === 'rgba(0, 0, 0, 0)' && this.backgroundColor) {
+      color = this.backgroundColor;
+    }
+    return color;
+  }
+
+  /**
    * Highlight the comment as a target (it is opened by a link, just posted, is the target of the
    * up/down comment buttons, or is scrolled to after pressing a navigation panel button).
    */
@@ -580,46 +624,127 @@ export default class Comment extends CommentSkeleton {
     const $elementsToAnimate = this.$underlay
       .add(this.$overlayContent)
       .add(this.$overlayGradient)
+      .stop()
       .css('background-image', 'none')
       .css('background-color', '');
-
-    let initialColor = window.getComputedStyle(this.$underlay.get(0)).backgroundColor;
-    if (initialColor === 'rgba(0, 0, 0, 0)' && this.backgroundColor) {
-      initialColor = this.backgroundColor;
-    }
-
-    this.$underlay.addClass('cd-commentUnderlay-target');
+    let finalColor = this.getCurrentBackgroundColor();
+    const $document = $(document.documentElement);
 
     // We don't take the color from cd.g.COMMENT_UNDERLAY_TARGET_COLOR as it may be overriden by the
     // user in their personal CSS.
-    const targetColor = window.getComputedStyle(this.$underlay.get(0)).backgroundColor;
-
-    this.$underlay.removeClass('cd-commentUnderlay-target');
+    const initialColor = $document.css('--cd-comment-underlay-target-color');
 
     this.isTarget = true;
-
-    $elementsToAnimate
-      .stop()
-      .css('background-color', targetColor);
+    $elementsToAnimate.css('background-color', initialColor);
     clearTimeout(this.unhighlightTimeout);
     this.unhighlightTimeout = setTimeout(() => {
+      // These comment properties may get assigned after the highlightTarget() call.
       if (this.isFocused) {
-        initialColor = cd.g.COMMENT_UNDERLAY_FOCUSED_COLOR;
+        finalColor = $document.css('--cd-comment-underlay-focused-color');
       } else if (this.isNew) {
-        initialColor = cd.g.COMMENT_UNDERLAY_NEW_COLOR;
+        finalColor = $document.css('--cd-comment-underlay-new-color');
       }
-      $elementsToAnimate.animate(
-        { backgroundColor: initialColor },
+      this.flash(initialColor, finalColor, () => {
+        this.isTarget = false;
+      })
+    }, 1500);
+  }
+
+  flash(initialColor, finalColor, callback) {
+    if (!finalColor) {
+      finalColor = this.getCurrentBackgroundColor();
+      if (finalColor === initialColor) {
+        finalColor = this.backgroundColor || 'rgba(0, 0, 0, 0)';
+      }
+    }
+
+    const $elementsToAnimate = this.$underlay
+      .add(this.$overlayContent)
+      .add(this.$overlayGradient)
+      .stop()
+      .css('background-image', 'none')
+      .css('background-color', initialColor)
+      .animate(
+        { backgroundColor: finalColor },
         400,
         'swing',
         () => {
-          this.isTarget = false;
+          if (callback) {
+            callback();
+          }
           $elementsToAnimate
             .css('background-image', '')
             .css('background-color', '');
         }
       );
-    }, 1500);
+  }
+
+  flashNewOnSight() {
+    if (this.isInViewport()) {
+      this.flash($(document.documentElement).css('--cd-comment-underlay-new-color'));
+    } else {
+      this.isFlashOnSightSet = true;
+    }
+  }
+
+  addEditMark(isEditedSince, isNewVersionRendered, comparedRevisionId) {
+    if (isEditedSince) {
+      this.isEditedSincePreviousVisit = true;
+    } else {
+      this.isEdited = true;
+    }
+
+    this.$elements
+      .last()
+      .find('.cd-editMark')
+      .remove();
+
+    let $refreshLink;
+    if (!isNewVersionRendered) {
+      $refreshLink = $('<a>')
+        .text(cd.s('comment-edited-refresh'))
+        .on('click', () => {
+          reloadPage({ commentAnchor: this.anchor });
+        });
+    }
+
+    let $diffLink;
+    if (this.getSourcePage().name === cd.g.CURRENT_PAGE.name) {
+      const diffUrl = this.getUrl({
+        oldid: mw.config.get('wgRevisionId'),
+        diff: comparedRevisionId,
+      });
+      $diffLink = $('<a>')
+        .href(diffUrl)
+        .text(cd.s('comment-edited-diff'));
+    }
+
+    const $span = $('<span>')
+      .addClass('cd-editMark')
+      .append(cd.sParse(isEditedSince ? 'comment-editedsince' : 'comment-edited'));
+    if ($refreshLink) {
+      $span.append(' ', $refreshLink);
+    }
+    if ($diffLink) {
+      $span.append(cd.mws('dot-separator'), $diffLink);
+    }
+
+    this.$elements.last().append($span);
+  }
+
+  markAsDeleted() {
+    if (this.isDeleted) return;
+
+    this.configureLayers();
+    if (!this.underlay) return;
+
+    this.underlay.classList.add('cd-commentUnderlay-deleted');
+    this.isDeleted = true;
+  }
+
+  unmarkAsDeleted() {
+    this.underlay.classList.remove('cd-commentUnderlay-deleted');
+    this.isDeleted = false;
   }
 
   /**
@@ -755,19 +880,13 @@ export default class Comment extends CommentSkeleton {
     // Search for the edit in the range of 2 minutes before to 2 minutes later.
     const rvstart = new Date(this.date.getTime() - cd.g.MILLISECONDS_IN_A_MINUTE * 2).toISOString();
     const rvend = new Date(this.date.getTime() + cd.g.MILLISECONDS_IN_A_MINUTE * 2).toISOString();
-    const revisionsRequest = cd.g.api.get({
-      action: 'query',
-      titles: this.getSourcePage().getArchivedPage().name,
-      rvslots: 'main',
-      prop: 'revisions',
+    const revisionsRequest = this.getSourcePage().getArchivedPage().getRevisions({
       rvprop: ['ids', 'flags', 'comment', 'timestamp'],
       rvdir: 'newer',
       rvstart,
       rvend,
       rvuser: this.author.name,
       rvlimit: 500,
-      redirects: true,
-      formatversion: 2,
     }).catch(handleApiReject);
 
     let genderRequest;
@@ -789,7 +908,7 @@ export default class Comment extends CommentSkeleton {
       fromtitle: this.getSourcePage().getArchivedPage().name,
       fromrev: revision.revid,
       torelative: 'prev',
-      prop: 'diff|diffsize',
+      prop: ['diff', 'diffsize'],
       formatversion: 2,
     }).catch(handleApiReject));
 
@@ -969,11 +1088,8 @@ export default class Comment extends CommentSkeleton {
    */
   async thank() {
     const thankButton = this.thankButton;
-    this.replaceButton(
-      this.thankButton,
-      this.elementPrototypes.pendingThankButton.cloneNode(true),
-      'thank'
-    );
+    const pendingThankButton = this.elementPrototypes.pendingThankButton.cloneNode(true);
+    this.replaceButton(this.thankButton, pendingThankButton, 'thank');
 
     if (dealWithLoadingBug('mediawiki.diff.styles')) return;
 
@@ -1007,11 +1123,8 @@ export default class Comment extends CommentSkeleton {
       }
 
       mw.notify(cd.s('thank-success'));
-      this.replaceButton(
-        this.thankButton,
-        this.elementPrototypes.thankedButton.cloneNode(true),
-        'thank'
-      );
+      const thankedButton = this.elementPrototypes.thankedButton.cloneNode(true);
+      this.replaceButton(this.thankButton, thankedButton, 'thank');
 
       thanks[edit.revid] = {
         anchor: this.anchor,
@@ -1220,7 +1333,8 @@ export default class Comment extends CommentSkeleton {
   }
 
   /**
-   * Mark the comment as seen.
+   * Mark the comment as seen, and also {@link module:Comment#flash flash} comments that are
+   * prescribed to flash.
    *
    * @param {string} [registerAllInDirection] Mark all comments in the forward (`'forward'`) or
    *   backward (`'backward'`) direction from this comment as seen.
@@ -1236,29 +1350,31 @@ export default class Comment extends CommentSkeleton {
       }
     }
 
+    if (this.isFlashOnSightSet) {
+      this.isFlashOnSightSet = false;
+      this.flash($(document.documentElement).css('--cd-comment-underlay-new-color'));
+    }
+
     if (registerAllInDirection && navPanel.getUnseenCount() !== 0) {
       const nextComment = cd.comments[this.id + (registerAllInDirection === 'forward' ? 1 : -1)];
-      if (nextComment?.isInViewport(true)) {
+      if (nextComment?.isInViewport()) {
         nextComment.registerSeen(registerAllInDirection, highlight);
       }
     }
   }
 
   /**
-   * Determine if the comment is in the viewport. Return null if we couldn't get the comment
+   * Determine if the comment is in the viewport. Return `null` if we couldn't get the comment's
    * positions.
    *
-   * @param {boolean} updatePositions Update the comment positions before determining the result.
    * @param {boolean} partially Return true even if only a part of the comment is in the viewport.
    * @returns {?boolean}
    */
-  isInViewport(updatePositions = false, partially = false) {
+  isInViewport(partially = false) {
     const viewportTop = window.pageYOffset;
     const viewportBottom = viewportTop + window.innerHeight;
 
-    if (updatePositions || !this.positions) {
-      this.getPositions();
-    }
+    this.getPositions();
 
     if (!this.positions) {
       return null;
@@ -1277,11 +1393,11 @@ export default class Comment extends CommentSkeleton {
 
     commentLayers.underlays.splice(commentLayers.underlays.indexOf(this.underlay), 1);
 
-    this.underlay.parentElement.removeChild(this.underlay);
+    this.underlay.parentNode.removeChild(this.underlay);
     this.underlay = null;
     this.$underlay = null;
 
-    this.overlay.parentElement.removeChild(this.overlay);
+    this.overlay.parentNode.removeChild(this.overlay);
     this.overlay = null;
     this.$overlay = null;
   }
@@ -1306,6 +1422,33 @@ export default class Comment extends CommentSkeleton {
   set $elements(value) {
     this.cached$elements = value;
     this.elements = value.get();
+  }
+
+  replaceElement(element, newElementOrHtml) {
+    const nativeElement = element instanceof $ ? element.get(0) : element;
+    let newElement;
+    if (typeof newElementOrHtml === 'string') {
+      const index = Array.from(nativeElement.parentNode.children).indexOf(nativeElement);
+      const parentNode = nativeElement.parentNode;
+      nativeElement.outerHTML = newElementOrHtml;
+      newElement = parentNode.children[index];
+    } else {
+      newElement = newElementOrHtml;
+      nativeElement.parentNode.replaceChild(newElement, element);
+    }
+
+    if (element instanceof $) {
+      this.$elements = this.$elements
+        .not(nativeElement)
+        .add(newElement);
+    } else {
+      this.elements.splice(this.elements.indexOf(element), 1, newElementOrHtml);
+    }
+
+    if (this.highlightables.includes(nativeElement)) {
+      this.highlightables.splice(this.highlightables.indexOf(nativeElement), 1, newElement);
+      this.bindEvents(newElement);
+    }
   }
 
   /**
@@ -1366,11 +1509,11 @@ export default class Comment extends CommentSkeleton {
         .clone()
         .removeClass('cd-hidden');
       const $dummy = $('<div>').append($clone);
-      const classes = ['.cd-signature'];
+      const selectorParts = ['.cd-signature', '.cd-editMark'];
       if (cd.config.unsignedClass) {
-        classes.push(`.${cd.config.unsignedClass}`);
+        selectorParts.push(`.${cd.config.unsignedClass}`);
       }
-      const selector = classes.join(', ');
+      const selector = selectorParts.join(', ');
       $dummy.find(selector).remove();
       let text = $dummy.cdGetText();
       if (cleanUp) {
@@ -1684,8 +1827,7 @@ export default class Comment extends CommentSkeleton {
         ) :
         !match.headingMatch;
 
-      const codeToCompare = removeWikiMarkup(match.code);
-      match.overlap = calculateWordsOverlap(this.getText(), codeToCompare);
+      match.overlap = calculateWordsOverlap(this.getText(), removeWikiMarkup(match.code));
 
       match.score = (
         (
@@ -2053,8 +2195,8 @@ export default class Comment extends CommentSkeleton {
   }
 
   /**
-   * Object with the same structure as {@link module:CommentSkeleton} has. (It comes from a web
-   * worker so its constuctor is lost.)
+   * Object with the same basic structure as {@link module:CommentSkeleton} has. (It comes from a
+   * web worker so its constuctor is lost.)
    *
    * @typedef {object} CommentSkeletonLike
    */
@@ -2139,7 +2281,7 @@ export default class Comment extends CommentSkeleton {
     // margin and not practically reachable, unless when there is only few comments. Usually the
     // cycle finishes after a few steps.
     for (let i = 0; i < cd.comments.length; i++) {
-      if (currentComment.isInViewport(true)) {
+      if (currentComment.isInViewport()) {
         foundComment = currentComment;
         break;
       }

@@ -256,6 +256,8 @@ const navPanel = {
    * @memberof module:navPanel
    */
   updateFirstUnseenButton() {
+    if (!navPanel.isMounted()) return;
+
     if (unseenCount) {
       this.$firstUnseenButton.show().text(unseenCount);
     } else {
@@ -287,7 +289,7 @@ const navPanel = {
 
     // This will return invisible comments too in which case an error will be displayed.
     const comment = reorderArray(cd.comments, commentInViewport.id, true)
-      .find((comment) => comment.isNew && comment.isInViewport(true) !== true);
+      .find((comment) => comment.isNew && comment.isInViewport() !== true);
     if (comment) {
       comment.$elements.cdScrollTo('center', true, () => {
         comment.registerSeen('backward', true);
@@ -309,7 +311,7 @@ const navPanel = {
 
     // This will return invisible comments too in which case an error will be displayed.
     const comment = reorderArray(cd.comments, commentInViewport.id)
-      .find((comment) => comment.isNew && comment.isInViewport(true) !== true);
+      .find((comment) => comment.isNew && comment.isInViewport() !== true);
     if (comment) {
       comment.$elements.cdScrollTo('center', true, () => {
         comment.registerSeen('forward', true);
@@ -339,15 +341,15 @@ const navPanel = {
   },
 
   /**
-   * Go to the next comment form out of sight, or just the first comment form, if `justFirst` is set
-   * to true.
+   * Go to the next comment form out of sight, or just the first comment form, if `first` is set to
+   * true.
    *
-   * @param {boolean} [justFirst=false]
+   * @param {boolean} [first=false]
    * @memberof module:navPanel
    */
-  goToNextCommentForm(justFirst = false) {
+  goToNextCommentForm(first = false) {
     const commentForm = cd.commentForms
-      .filter((commentForm) => justFirst || !commentForm.$element.cdIsInViewport(true))
+      .filter((commentForm) => first || !commentForm.$element.cdIsInViewport(true))
       .sort((commentForm1, commentForm2) => {
         let top1 = commentForm1.$element.get(0).getBoundingClientRect().top;
         if (top1 < 0) {
@@ -366,7 +368,8 @@ const navPanel = {
   },
 
   /**
-   * Mark comments that are currently in the viewport as read.
+   * Mark comments that are currently in the viewport as read, and also {@link module:Comment#flash
+   * flash} comments that are prescribed to flash.
    *
    * @memberof module:navPanel
    */
@@ -374,7 +377,7 @@ const navPanel = {
     // Don't run this more than once in some period, otherwise scrolling may be slowed down. Also,
     // wait before running, otherwise comments may be registered as seen after a press of Page
     // Down/Page Up.
-    if (!unseenCount || cd.g.dontHandleScroll || cd.g.autoScrollInProgress) return;
+    if (cd.g.dontHandleScroll || cd.g.autoScrollInProgress) return;
 
     cd.g.dontHandleScroll = true;
 
@@ -387,9 +390,10 @@ const navPanel = {
       if (!commentInViewport) return;
 
       const registerSeenIfInViewport = (comment) => {
-        const isInViewport = comment.isInViewport(true);
+        const isInViewport = comment.isInViewport();
         if (isInViewport) {
           comment.registerSeen();
+          return false;
         } else if (isInViewport === false) {
           // isInViewport could also be null.
           return true;

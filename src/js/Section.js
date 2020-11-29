@@ -11,9 +11,9 @@ import Page from './Page';
 import SectionSkeleton from './SectionSkeleton';
 import cd from './cd';
 import toc from './toc';
+import { areObjectsEqual, dealWithLoadingBug, defined, unique } from './util';
 import { checkboxField } from './ooui';
 import { copyLink } from './modal.js';
-import { dealWithLoadingBug, defined, unique } from './util';
 import { editWatchedSections } from './modal';
 import {
   encodeWikilink,
@@ -173,7 +173,7 @@ export default class Section extends SectionSkeleton {
       replyContainer.className = 'cd-commentLevel cd-sectionButtonContainer';
       replyContainer.appendChild(replyWrapper);
 
-      this.lastElementInFirstChunk.parentElement.insertBefore(
+      this.lastElementInFirstChunk.parentNode.insertBefore(
         replyContainer,
         this.lastElementInFirstChunk.nextElementSibling
       );
@@ -233,7 +233,7 @@ export default class Section extends SectionSkeleton {
     buttonContainer.appendChild(button);
 
     const lastElement = this.elements[this.elements.length - 1];
-    lastElement.parentElement.insertBefore(buttonContainer, lastElement.nextElementSibling);
+    lastElement.parentNode.insertBefore(buttonContainer, lastElement.nextElementSibling);
 
     const deferButtonHide = () => {
       if (!this.hideAddSubsectionButtonTimeout) {
@@ -1018,7 +1018,7 @@ export default class Section extends SectionSkeleton {
         $links.addClass('cd-sectionLink-pending');
       }
     }
-    const watchedAncestor = this.getWatchedAncestor();
+    const watchedAncestor = this.getClosestWatchedSection();
     Section.unwatchSection(
       this.headline,
       {
@@ -1156,7 +1156,7 @@ export default class Section extends SectionSkeleton {
    * @param {boolean} includeCurrent Check the current section too.
    * @returns {?Section}
    */
-  getWatchedAncestor(includeCurrent) {
+  getClosestWatchedSection(includeCurrent) {
     for (
       let otherSection = includeCurrent ? this : this.getParent();
       otherSection;
@@ -1367,6 +1367,7 @@ export default class Section extends SectionSkeleton {
         hasHeadlineMatched * 1 +
         hasFirstCommentMatched * 1 +
         hasSectionIndexMatched * 0.5 +
+
         // Shouldn't give too high a weight to this factor as it is true for every first section.
         havePreviousHeadlinesMatched * 0.25
       );
@@ -1459,25 +1460,6 @@ export default class Section extends SectionSkeleton {
         .reverse()
         .find((section) => section.level === 2) ||
       this
-    );
-  }
-
-  /**
-   * Get the parent section of the section if the section's level is lower than 2 (i.e. the number
-   * is higher).
-   *
-   * @returns {?Section}
-   */
-  getParent() {
-    if (this.level <= 2) {
-      return null;
-    }
-    return (
-      cd.sections
-        .slice(0, this.id)
-        .reverse()
-        .find((section) => section.level < this.level) ||
-      null
     );
   }
 
@@ -1672,39 +1654,50 @@ export default class Section extends SectionSkeleton {
 
   /**
    * Get a section by headline, first comment data, and/or index. At least two parameters must
-   * match. TODO: use parent sections list also?
+   * match.
    *
    * @param {object} options
+   * @param {number} options.id
    * @param {string} options.headline
+   * @param {string} [options.anchor]
+   * @param {string} [options.parentTree]
    * @param {string} options.firstCommentAnchor
-   * @param {number} options.index
    * @returns {?Section}
    */
-  static search({ headline, firstCommentAnchor, index }) {
-    const matches = [
-      ...cd.sections.filter((section) => section.headline === headline),
-      ...cd.sections.filter((section) => (
-        section.comments[0] &&
-        section.comments[0].anchor === firstCommentAnchor
-      )),
-    ];
-    if (cd.sections[index]) {
-      matches.push(cd.sections[index]);
-    }
-    const scores = {};
+  static search({ id, headline, anchor, parentTree, firstCommentAnchor }) {
+    const matches = [];
+    cd.sections.some((section) => {
+      const hasIdMatched = section.id === id;
+      const hasHeadlineMatched = section.headline === headline;
+      const hasAnchorMatched = section.anchor === anchor;
+      let hasParentTreeMatched;
+      if (parentTree) {
+        hasParentTreeMatched = areObjectsEqual(section.getParentTree(), parentTree);
+      }
+      const hasFirstCommentMatched = section.comments[0]?.anchor === firstCommentAnchor;
+      const score = (
+        hasHeadlineMatched * 1 +
+        (parentTree && hasParentTreeMatched) * 1 +
+        hasFirstCommentMatched * 1 +
+        hasAnchorMatched * 0.5 +
+        hasIdMatched * 0.25
+      );
+      if (score >= 2) {
+        matches.push({ section, score });
+      }
+
+      // Score bigger than 3.5 means it's the best match for sure. Two sections can't have
+      // coinciding anchors, so there can't be 2 sections with the score bigger than 3.5.
+      return score >= 3.5;
+    });
+
+    let bestMatch;
     matches.forEach((match) => {
-      if (!scores[match.id]) {
-        scores[match.id] = 0;
-      }
-      scores[match.id]++;
-    });
-    let bestMatchId = null;
-    Object.keys(scores).forEach((matchId) => {
-      if (scores[matchId] >= 2 && (bestMatchId === null || scores[matchId] > scores[bestMatchId])) {
-        bestMatchId = matchId;
+      if (!bestMatch || match.score > bestMatch.score) {
+        bestMatch = match;
       }
     });
-    return bestMatchId === null ? null : cd.sections[bestMatchId];
+    return bestMatch ? bestMatch.section : null;
   }
 
   /**

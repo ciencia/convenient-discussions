@@ -1,10 +1,11 @@
 /**
- * Table of contents related functions.
+ * Table of contents-related functions.
  *
  * @module toc
  */
 
 import Comment from './Comment';
+import Section from './Section';
 import cd from './cd';
 import { reloadPage } from './boot';
 import { restoreScrollPosition, saveScrollPosition } from './util';
@@ -13,7 +14,7 @@ export default {
   /**
    * Hide the TOC if the relevant cookie is set. This method duplicates {@link
    * https://phabricator.wikimedia.org/source/mediawiki/browse/master/resources/src/mediawiki.toc/toc.js
-   * the native MediaWiki function} and exists because we may need to hide the TOC faster than the
+   * the native MediaWiki function} and exists because we may need to hide the TOC earlier than the
    * native method does it.
    */
   possiblyHide() {
@@ -63,14 +64,14 @@ export default {
   },
 
   /**
-   * Object with the same structure as {@link module:SectionSkeleton} has. (It comes from a web
-   * worker so its constuctor is lost.)
+   * Object with the same basic structure as {@link module:SectionSkeleton} has. (It comes from a
+   * web worker so its constuctor is lost.)
    *
    * @typedef {object} SectionSkeletonLike
    */
 
   /**
-   * Add links to new, not yet displayed sections (loaded in the background) to the table of
+   * Add links to new, not yet rendered sections (loaded in the background) to the table of
    * contents.
    *
    * @param {SectionSkeletonLike[]} sections All sections on the page.
@@ -136,13 +137,11 @@ export default {
     let currentTree = [];
     const $topUl = cd.g.$toc.children('ul');
     sections.forEach((section) => {
-      let match = tocSections.find((tocSection) => (
-        // Anchor check is included as a fallback in case of minor differences in how MediaWIki and
-        // we infer the headline.
-        (tocSection.headline === section.headline || tocSection.anchor === section.anchor) &&
-
-        tocSection.level === section.tocLevel
-      ));
+      const matchedSection = Section.search(section);
+      let match = (
+        matchedSection &&
+        tocSections.find((tocSection) => tocSection.anchor === matchedSection.anchor)
+      );
 
       if (!match) {
         const headline = section.headline;
@@ -211,8 +210,8 @@ export default {
   },
 
   /**
-   * Object with the same structure as {@link module:CommentSkeleton} has. (It comes from a web
-   * worker so its constuctor is lost.)
+   * Object with the same basic structure as {@link module:CommentSkeleton} has. (It comes from a
+   * web worker so its constuctor is lost.)
    *
    * @typedef {object} CommentSkeletonLike
    */
@@ -231,7 +230,7 @@ export default {
 
     const areCommentsRendered = firstComment instanceof Comment;
 
-    saveScrollPosition(!areCommentsRendered || !cd.g.hasPageBeenReloaded);
+    saveScrollPosition(!(cd.g.hasPageBeenReloaded && areCommentsRendered));
 
     cd.g.$toc
       .find('.cd-toc-notRenderedCommentList')

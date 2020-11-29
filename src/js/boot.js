@@ -159,31 +159,32 @@ export async function initSettings() {
  * @private
  */
 export function initTalkPageCss() {
-  // Set the transparent color for the "focused" color. The user may override the CSS variable value
-  // in his personal styles, so we get the existing value first.
-  const focusedColor = $(document.documentElement).css('--cd-comment-underlay-focused-color');
-
-  // Vector, Monobook, Minerva
-  const contentBackgroundColor = $('#content').css('background-color') || '#fff';
-
-  $(document.documentElement).css(
-    '--cd-comment-underlay-focused-transparent-color',
-    transparentize(focusedColor || cd.g.COMMENT_UNDERLAY_FOCUSED_COLOR)
-  );
-
   cd.g.nanoCss = nanoCssCreate();
   cd.g.nanoCss.put(':root', {
     '--cd-comment-underlay-focused-color': cd.g.COMMENT_UNDERLAY_FOCUSED_COLOR,
     '--cd-comment-underlay-target-color': cd.g.COMMENT_UNDERLAY_TARGET_COLOR,
     '--cd-comment-underlay-new-color': cd.g.COMMENT_UNDERLAY_NEW_COLOR,
     '--cd-comment-underlay-own-color': cd.g.COMMENT_UNDERLAY_OWN_COLOR,
+    '--cd-comment-underlay-deleted-color': cd.g.COMMENT_UNDERLAY_DELETED_COLOR,
   });
+
+  // Set the transparent color for the "focused" color. The user may override the CSS variable value
+  // in their personal styles, so we get the existing value first.
+  const focusedColor = $(document.documentElement).css('--cd-comment-underlay-focused-color');
+  cd.g.nanoCss.put(':root', {
+    '--cd-comment-underlay-focused-transparent-color': transparentize(focusedColor),
+  });
+
   cd.g.nanoCss.put('.ltr .cd-commentOverlay-gradient', {
     backgroundImage: 'linear-gradient(to left, var(--cd-comment-underlay-focused-color), var(--cd-comment-underlay-focused-transparent-color))',
   });
   cd.g.nanoCss.put('.rtl .cd-commentOverlay-gradient', {
     backgroundImage: 'linear-gradient(to right, var(--cd-comment-underlay-focused-color), var(--cd-comment-underlay-focused-transparent-color))',
   });
+
+  // Vector, Monobook, Minerva
+  const contentBackgroundColor = $('#content').css('background-color') || '#fff';
+
   cd.g.nanoCss.put('.cd-messageArea .cd-closeButton', {
     backgroundColor: contentBackgroundColor,
   });
@@ -767,15 +768,12 @@ export async function reloadPage(keptData = {}) {
   cd.g.hasPageBeenReloaded = true;
 
   updateChecker.updatePageTitle(0, false);
-  updatePageContent(parseData.text, keptData);
+  await updatePageContent(parseData.text, keptData);
 
   toc.possiblyHide();
 
   if (!keptData.commentAnchor && !keptData.sectionAnchor) {
-    // setTimeout for Firefox, to wait until the page is rendered.
-    setTimeout(() => {
-      restoreScrollPosition(false);
-    });
+    restoreScrollPosition(false);
   }
 }
 
@@ -815,7 +813,7 @@ export function saveSession() {
         targetData = {
           headline: target.headline,
           firstCommentAnchor: target.comments[0]?.anchor,
-          index: target.id,
+          id: target.id,
         };
       }
       return {
@@ -873,7 +871,13 @@ function restoreCommentFormsFromData(commentFormsData) {
       const section = Section.search({
         headline: data.targetData.headline,
         firstCommentAnchor: data.targetData.firstCommentAnchor,
-        index: data.targetData.index,
+
+        // TODO: remove "data.targetData.index ||" after February 2021, when old values in users'
+        // local storages will die for good.
+        id: data.targetData.index || data.targetData.id,
+
+        // Can't provide parentTree as cd.sections has already changed; will need to add a
+        // workaround if parentTree proves needed.
       });
       if (section?.isActionable && !section[`${property}Form`]) {
         try {
@@ -967,7 +971,10 @@ export function restoreCommentForms() {
         const section = Section.search({
           headline: target.headline,
           firstCommentAnchor: target.comments[0]?.anchor,
-          index: target.id,
+          id: target.id,
+
+          // Can't provide parentTree as cd.sections has already changed; will need to add a
+          // workaround if parentTree proves needed.
         });
         if (section?.isActionable) {
           try {

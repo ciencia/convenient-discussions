@@ -4,7 +4,6 @@
  * @module updateChecker
  */
 
-import CdError from './CdError';
 import Comment from './Comment';
 import Section from './Section';
 import cd from './cd';
@@ -18,12 +17,16 @@ import {
   isLoadingOverlayOn,
   reloadPage,
 } from './boot';
-import { getUserGenders, makeRequestNoTimers } from './apiWrappers';
-import { handleApiReject, isCommentEdit, keepWorkerSafeValues, unique } from './util';
+import { getUserGenders } from './apiWrappers';
+import { keepWorkerSafeValues, unique } from './util';
 
 let lastCheckedRevisionId;
 let notifiedAbout;
 let isBackgroundCheckArranged;
+let previousVisitRevisionId;
+
+const revisionData = {};
+const checkedForNewEdits = {};
 
 /**
  * Tell the worker to wake the script up after a given interval.
@@ -75,36 +78,20 @@ async function checkForUpdates() {
   // Precaution
   isBackgroundCheckArranged = false;
 
-  const rvstartid = lastCheckedRevisionId || mw.config.get('wgRevisionId');
   try {
-    const resp = await makeRequestNoTimers({
-      action: 'query',
-      titles: cd.g.CURRENT_PAGE.name,
-      prop: 'revisions',
-      rvprop: ['ids', 'flags', 'size', 'comment'],
-      rvdir: 'newer',
-      rvstartid,
-      rvlimit: 500,
-      redirects: true,
-      formatversion: 2,
-    }).catch(handleApiReject);
+    const revisions = await cd.g.CURRENT_PAGE.getRevisions({
+      rvprop: ['ids'],
+      rvlimit: 1,
+    }, { noTimers: true });
 
-    const revisions = resp.query?.pages?.[0]?.revisions;
-    if (!revisions) {
-      throw new CdError({
-        type: 'api',
-        code: 'noData',
-      });
-    }
-
-    const newRevisions = revisions.filter((revision, i) => (
-      i !== 0 &&
-      !revision.minor &&
-      Math.abs(revision.size - revisions[i - 1].size) >= cd.config.bytesToDeemComment &&
-      !isCommentEdit(revision.comment)
-    ));
-    if (newRevisions.length) {
+    if (
+      revisions.length &&
+      revisions[0].revid !== (lastCheckedRevisionId || mw.config.get('wgRevisionId'))
+    ) {
       await updateChecker.processPage();
+      if (!revisionData[mw.config.get('wgRevisionId')]) {
+        updateChecker.processPage(mw.config.get('wgRevisionId'));
+      }
     }
   } catch (e) {
     if (e?.data && e.data.type !== 'network') {
@@ -118,6 +105,93 @@ async function checkForUpdates() {
   } else {
     setAlarmViaWorker(cd.g.UPDATE_CHECK_INTERVAL * 1000);
   }
+}
+
+/**
+ * If the revision of the current visit and previous visit are different, process the said
+ * revisions. (We need to process the current revision too to get the comments' inner HTML without
+ * any elements that may be added by scripts.) The revisions' data will finally processed by {@link
+ * module:updateChecker~checkForEditsSincePreviousVisit checkForEditsSincePreviousVisit()}.
+ *
+ * @private
+ */
+async function processRevisionsIfNeeded() {
+  const revisions = await cd.g.CURRENT_PAGE.getRevisions({
+    rvprop: ['ids'],
+    rvstart: new Date(cd.g.previousVisitUnixTime * 1000).toISOString(),
+    rvlimit: 1,
+  }, { noTimers: true });
+
+  previousVisitRevisionId = revisions[0]?.revid;
+
+  if (previousVisitRevisionId && previousVisitRevisionId !== mw.config.get('wgRevisionId')) {
+    await updateChecker.processPage(previousVisitRevisionId);
+    await updateChecker.processPage(mw.config.get('wgRevisionId'));
+  }
+}
+
+/**
+ * Check if there are changes made to the currently displayed comments since the previous visit.
+ *
+ * @private
+ */
+async function checkForEditsSincePreviousVisit() {
+  const oldComments = revisionData[previousVisitRevisionId].comments;
+  const currentComments = revisionData[mw.config.get('wgRevisionId')].comments;
+  currentComments.forEach((currentComment) => {
+    const oldComment = oldComments.find((oldComment) => currentComment.anchor === oldComment.anchor);
+    if (oldComment) {
+      if (oldComment.rawHtml !== currentComment.rawHtml) {
+        const comment = Comment.getCommentByAnchor(currentComment.anchor);
+        if (!comment) return;
+
+        comment.addEditMark(true, true, previousVisitRevisionId);
+      }
+    }
+  });
+}
+
+/**
+ * Check if there are changes made to the currently displayed comments since they were rendered.
+ *
+ * @private
+ */
+async function checkForNewEdits() {
+  const newComments = revisionData[lastCheckedRevisionId].comments;
+  const currentComments = revisionData[mw.config.get('wgRevisionId')].comments;
+  currentComments.forEach((currentComment) => {
+    const newComment = newComments
+      .find((newComment) => currentComment.anchor === newComment.anchor);
+    if (newComment) {
+      const comment = Comment.getCommentByAnchor(currentComment.anchor);
+      if (!comment) return;
+
+      if (newComment.rawHtml !== currentComment.rawHtml) {
+        if (comment.$elements.length === 1 && newComment.elementsCount === 1) {
+          comment.replaceElement(comment.$elements.first(), newComment.rawHtml);
+          mw.hook('wikipage.content').add(comment.$elements);
+          comment.addEditMark(false, true, lastCheckedRevisionId);
+          comment.flashNewOnSight();
+        } else {
+          comment.addEditMark(false, false, lastCheckedRevisionId);
+        }
+      } else if (comment.isEdited) {
+        comment.isEdited = false;
+        comment.$elements
+          .last()
+          .find('.cd-editMark')
+          .remove();
+      }
+      if (comment.isDeleted) {
+        comment.unmarkAsDeleted();
+      }
+    } else {
+      const comment = Comment.getCommentByAnchor(currentComment.anchor);
+      if (!comment) return;
+
+      comment.markAsDeleted();
+    }
+  });
 }
 
 /**
@@ -324,8 +398,8 @@ function isPageStillOutdated(newRevisionId) {
 }
 
 /**
- * Object with the same structure as {@link module:CommentSkeleton} has. (It comes from a web worker
- * so its constuctor is lost.)
+ * Object with the same basic structure as {@link module:CommentSkeleton} has. (It comes from a web
+ * worker so its constuctor is lost.)
  *
  * @typedef {object} CommentSkeletonLike
  */
@@ -355,6 +429,7 @@ async function processComments(comments, revisionId) {
   // icon which means 0 new comments.
   const newComments = comments
     .filter((comment) => comment.anchor && !Comment.getCommentByAnchor(comment.anchor));
+  cd.debug.startTimer('filter interesting');
   const interestingNewComments = newComments.filter((comment) => {
     if (comment.isOwn || cd.settings.notificationsBlacklist.includes(comment.author.name)) {
       return false;
@@ -369,17 +444,18 @@ async function processComments(comments, revisionId) {
 
     if (comment.section) {
       // Is this section watched by means of an upper level section?
-      const sections = Section.getSectionsByHeadline(comment.section.headline);
-      for (const section of sections) {
-        const watchedAncestor = section.getWatchedAncestor(true);
-        if (watchedAncestor) {
-          comment.watchedSectionHeadline = watchedAncestor.headline;
+      const section = Section.search(comment.section);
+      if (section) {
+        const closestWatchedSection = section.getClosestWatchedSection(true);
+        if (closestWatchedSection) {
+          comment.watchedSectionHeadline = closestWatchedSection.headline;
           comment.interesting = true;
           return true;
         }
       }
     }
   });
+  cd.debug.stopTimer('filter interesting');
 
   const authors = newComments
     .map((comment) => comment.author)
@@ -395,12 +471,9 @@ async function processComments(comments, revisionId) {
   }
 
   const newCommentsBySection = Comment.groupBySection(newComments);
-  navPanel.updateRefreshButton(
-    newComments.length,
-    newCommentsBySection,
-    Boolean(interestingNewComments.length)
-  );
-  updateChecker.updatePageTitle(newComments.length, Boolean(interestingNewComments.length));
+  const areThereInteresting = Boolean(interestingNewComments.length);
+  navPanel.updateRefreshButton(newComments.length, newCommentsBySection, areThereInteresting);
+  updateChecker.updatePageTitle(newComments.length, areThereInteresting);
   toc.addNewComments(newCommentsBySection);
 
   Section.addNewCommentsNotifications(newCommentsBySection);
@@ -409,6 +482,8 @@ async function processComments(comments, revisionId) {
 
 /**
  * Callback for messages from the worker.
+ *
+ * TODO: rewrite worker tasks using promises (which could be tricky).
  *
  * @param {Event} e
  * @private
@@ -424,7 +499,32 @@ async function onMessageFromWorker(e) {
     lastCheckedRevisionId = message.revisionId;
     const { comments, sections } = message;
     toc.addNewSections(sections);
-    processComments(comments, message.revisionId);
+    await processComments(comments, message.revisionId);
+    revisionData[message.revisionId] = { comments, sections };
+  }
+
+  if (message.type === 'parseRevision' && !revisionData[message.revisionId]) {
+    const { comments, sections } = message;
+    revisionData[message.revisionId] = { comments, sections };
+
+    if (
+      previousVisitRevisionId &&
+      previousVisitRevisionId !== mw.config.get('wgRevisionId') &&
+      revisionData[previousVisitRevisionId] &&
+      revisionData[mw.config.get('wgRevisionId')]
+    ) {
+      checkForEditsSincePreviousVisit();
+    }
+  }
+
+  if (
+    lastCheckedRevisionId &&
+    revisionData[lastCheckedRevisionId] &&
+    revisionData[mw.config.get('wgRevisionId')] &&
+    !checkedForNewEdits[lastCheckedRevisionId]
+  ) {
+    checkForNewEdits();
+    checkedForNewEdits[lastCheckedRevisionId] = true;
   }
 }
 
@@ -445,10 +545,10 @@ const updateChecker = {
   init() {
     if (!cd.g.worker) return;
 
-    lastCheckedRevisionId = null;
     notifiedAbout = [];
     this.relevantNewCommentAnchor = null;
     isBackgroundCheckArranged = false;
+    previousVisitRevisionId = null;
 
     if (cd.g.worker.onmessage) {
       removeAlarmViaWorker();
@@ -457,21 +557,29 @@ const updateChecker = {
     }
 
     setAlarmViaWorker(cd.g.UPDATE_CHECK_INTERVAL * 1000);
+
+    if (cd.g.previousVisitUnixTime) {
+      processRevisionsIfNeeded();
+    }
   },
 
   /**
    * Process the current page in the worker context.
    *
+   * @param {number} [revisionToParseId]
    * @memberof module:updateChecker
    */
-  async processPage() {
-    const { text, revid } = await cd.g.CURRENT_PAGE.parse({
+  async processPage(revisionToParseId) {
+    const {
+      text,
+      revid: revisionId,
+    } = await cd.g.CURRENT_PAGE.parse({ oldid: revisionToParseId }, {
       noTimers: true,
       markAsRead: false,
     }) || {};
     cd.g.worker.postMessage({
-      type: 'parse',
-      revisionId: revid,
+      type: revisionToParseId ? 'parseRevision' : 'parse',
+      revisionId,
       text,
       g: keepWorkerSafeValues(cd.g, ['IS_IPv6_ADDRESS', 'TIMESTAMP_PARSER']),
       config: keepWorkerSafeValues(cd.config, ['checkForCustomForeignComponents']),

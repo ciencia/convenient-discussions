@@ -10,7 +10,7 @@ The script features include:
   * autofilling the edit summary with indication of the addressee of the comment;
   * saving comment drafts to restore the forms' content after unexpected events such as browser crashes;
 * creating topics and subsections;
-* highlighting and navigating new comments (via the navigation panel or the table of contents);
+* highlighting and navigating new comments (via the navigation panel or table of contents);
 * highlighting own comments;
 * desktop notifications about replies to the user's comments and comments in watched sections on open pages (opt-in);
 * watching sections, which affects notifications and highlighting edits on pages that list revisions;

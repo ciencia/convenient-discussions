@@ -4,9 +4,6 @@
  * @module app
  */
 
-import Comment from './Comment';
-import CommentForm from './CommentForm';
-import Section from './Section';
 import cd from './cd';
 import commentLinks from './commentLinks';
 import configUrls from './../../config/urls.json';
@@ -288,13 +285,13 @@ function go() {
       cd.debug.startTimer('loading data');
 
       // Make some requests in advance if the API module is ready in order not to make 2 requests
-      // sequentially.
+      // sequentially. We don't make the userinfo request, because if there is more than one tab in
+      // the background, this request is made and the execution stops at mw.loader.using, which
+      // results in overriding the renewed visits setting of one tab by another tab (the visits are
+      // loaded by one tab, then another tab, then written by one tab, then by another tab).
       let dataRequest;
       if (mw.loader.getState('mediawiki.api') === 'ready') {
         dataRequest = loadData();
-        getUserInfo().catch((e) => {
-          console.warn(e);
-        });
       }
 
       Promise.all([
