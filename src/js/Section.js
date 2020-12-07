@@ -975,10 +975,10 @@ export default class Section extends SectionSkeleton {
     let $links;
     if (!silent) {
       $links = $('.cd-sectionLink-watch, .cd-sectionLink-unwatch');
-      if ($links.hasClass('cd-sectionLink-pending')) {
+      if ($links.hasClass('cd-link-pending')) {
         return;
       } else {
-        $links.addClass('cd-sectionLink-pending');
+        $links.addClass('cd-link-pending');
       }
     }
     Section.watchSection(
@@ -987,7 +987,7 @@ export default class Section extends SectionSkeleton {
         silent,
         successCallback: () => {
           if ($links) {
-            $links.removeClass('cd-sectionLink-pending');
+            $links.removeClass('cd-link-pending');
           }
           Section.getSectionsByHeadline(this.headline).forEach((section) => {
             section.isWatched = true;
@@ -997,7 +997,7 @@ export default class Section extends SectionSkeleton {
         },
         errorCallback: () => {
           if ($links) {
-            $links.removeClass('cd-sectionLink-pending');
+            $links.removeClass('cd-link-pending');
           }
         },
     });
@@ -1012,10 +1012,10 @@ export default class Section extends SectionSkeleton {
     let $links;
     if (!silent) {
       $links = $('.cd-sectionLink-watch, .cd-sectionLink-unwatch');
-      if ($links.hasClass('cd-sectionLink-pending')) {
+      if ($links.hasClass('cd-link-pending')) {
         return;
       } else {
-        $links.addClass('cd-sectionLink-pending');
+        $links.addClass('cd-link-pending');
       }
     }
     const watchedAncestor = this.getClosestWatchedSection();
@@ -1025,7 +1025,7 @@ export default class Section extends SectionSkeleton {
         silent,
         successCallback: () => {
           if ($links) {
-            $links.removeClass('cd-sectionLink-pending');
+            $links.removeClass('cd-link-pending');
           }
           Section.getSectionsByHeadline(this.headline).forEach((section) => {
             section.isWatched = false;
@@ -1035,7 +1035,7 @@ export default class Section extends SectionSkeleton {
         },
         errorCallback: () => {
           if ($links) {
-            $links.removeClass('cd-sectionLink-pending');
+            $links.removeClass('cd-link-pending');
           }
         },
         watchedAncestorHeadline: watchedAncestor?.headline,

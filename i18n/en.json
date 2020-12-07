@@ -34,6 +34,7 @@
   "comment-edited": "The comment was edited.",
   "comment-edited-refresh": "Refresh",
   "comment-edited-diff": "Diff",
+  "comment-edited-diff-error": "Couldn't render the diff.",
   "comment-deleted": "The comment was deleted.",
   "comment-editedsince": "The comment was edited since your last visit.",
 

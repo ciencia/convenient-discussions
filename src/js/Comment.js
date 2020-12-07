@@ -727,9 +727,20 @@ export default class Comment extends CommentSkeleton {
       $diffLink = $('<a>')
         .attr('href', diffUrl)
         .text(cd.s('comment-edited-diff'))
-        .on('click', (e) => {
+        .on('click', async (e) => {
           e.preventDefault();
-          this.showDiff(comparedRevisionId);
+          $diffLink.addClass('cd-link-pending');
+          try {
+            await this.showDiff(comparedRevisionId);
+          } catch (e) {
+            let text = cd.s('comment-edited-diff-error');
+            const { type } = e.data;
+            if (type === 'network') {
+              text += ' ' + cd.sParse('error-network');
+            }
+            mw.notify(text, { type: 'error' });
+          }
+          $diffLink.removeClass('cd-link-pending');
         });
     }
 
@@ -2226,17 +2237,11 @@ export default class Comment extends CommentSkeleton {
       formatversion: 2,
     }).catch(handleApiReject);
 
-    let compareData;
-    try {
-      ([compareData] = await Promise.all([
-        compareRequest,
-        this.getCode(),
-        mw.loader.using('mediawiki.diff.styles'),
-      ]));
-    } catch (e) {
-      // ...
-      return;
-    }
+    let [compareData] = await Promise.all([
+      compareRequest,
+      this.getCode(),
+      mw.loader.using('mediawiki.diff.styles'),
+    ]);
 
     const pageCode = this.getSourcePage().code;
     const inCode = this.inCode;
@@ -2251,26 +2256,37 @@ export default class Comment extends CommentSkeleton {
 
     const body = compareData?.compare?.body;
     if (!body) {
-      // ...
-      return;
+      throw new CdError({
+        type: 'api',
+        code: 'noData',
+      });
     }
 
     const $diff = $(cd.util.wrapDiffBody(body));
     let currentLineNumber;
+    let cleanDiffBody = '';
     $diff.find('tr').each((i, tr) => {
       const $tr = $(tr);
-      const $lineNo = $tr.children('diff-lineno').eq(1);
+      const $lineNo = $tr.children('.diff-lineno').eq(1);
       if ($lineNo.length) {
-        currentLineNumber = ($lineNo.text().match(/\d+/) || [])[0];
+        currentLineNumber = Number(($lineNo.text().match(/\d+/) || [])[0]);
         if (!currentLineNumber) {
           throw new CdError({
             type: 'parse',
           });
         }
+        return;
       }
-      if (!$tr.children('diff-marker').length) return;
-
+      if (!$tr.children('.diff-marker').length) return;
+      if (!$tr.children().eq(2).hasClass('diff-empty')) {
+        if (lineNumbers.includes(currentLineNumber)) {
+          cleanDiffBody += $tr.html();
+        }
+        currentLineNumber++;
+      }
     });
+    const $cleanDiff = $(cd.util.wrapDiffBody(cleanDiffBody));
+    OO.ui.alert($cleanDiff, { size: 'larger' });
   }
 
   /**
