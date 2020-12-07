@@ -1653,15 +1653,15 @@ export default class Section extends SectionSkeleton {
   }
 
   /**
-   * Get a section by headline, first comment data, and/or index. At least two parameters must
-   * match.
+   * Get a section by several parameters: id (index), headline, anchor, parent tree, first comment
+   * data. At least two parameters must match, not counting id and anchor.
    *
    * @param {object} options
    * @param {number} options.id
    * @param {string} options.headline
-   * @param {string} [options.anchor]
+   * @param {string} options.anchor
    * @param {string} [options.parentTree]
-   * @param {string} options.firstCommentAnchor
+   * @param {string} [options.firstCommentAnchor]
    * @returns {?Section}
    */
   static search({ id, headline, anchor, parentTree, firstCommentAnchor }) {
@@ -1671,13 +1671,13 @@ export default class Section extends SectionSkeleton {
       const hasHeadlineMatched = section.headline === headline;
       const hasAnchorMatched = section.anchor === anchor;
       let hasParentTreeMatched;
-      if (parentTree) {
-        hasParentTreeMatched = areObjectsEqual(section.getParentTree(), parentTree);
-      }
+      hasParentTreeMatched = parentTree ?
+        areObjectsEqual(section.getParentTree(), parentTree) :
+        0.5;
       const hasFirstCommentMatched = section.comments[0]?.anchor === firstCommentAnchor;
       const score = (
         hasHeadlineMatched * 1 +
-        (parentTree && hasParentTreeMatched) * 1 +
+        hasParentTreeMatched * 1 +
         hasFirstCommentMatched * 1 +
         hasAnchorMatched * 0.5 +
         hasIdMatched * 0.25

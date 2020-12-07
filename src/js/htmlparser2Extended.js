@@ -139,6 +139,10 @@ Element.prototype.setAttribute = function (name, value) {
   this.attribs[name] = value || '';
 };
 
+Element.prototype.removeAttribute = function (name) {
+  delete this.attribs[name];
+};
+
 Element.prototype.appendChild = function (node) {
   if (node.parentNode) {
     node.remove();

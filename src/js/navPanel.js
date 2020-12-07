@@ -13,6 +13,7 @@ import { reorderArray } from './util';
 
 let newCount;
 let unseenCount;
+let notRenderedCount;
 let lastFirstUnseenCommentId;
 
 /**
@@ -179,6 +180,7 @@ const navPanel = {
     this.$element.remove();
     this.$element = null;
     unseenCount = null;
+    notRenderedCount = 0;
   },
 
   /**
@@ -202,6 +204,7 @@ const navPanel = {
   reset() {
     lastFirstUnseenCommentId = null;
     unseenCount = null;
+    notRenderedCount = 0;
 
     this.$refreshButton
       .empty()
@@ -232,11 +235,21 @@ const navPanel = {
   /**
    * Get the number of comments on the page that haven't been seen.
    *
-   * @returns {boolean}
+   * @returns {number}
    * @memberof module:navPanel
    */
   getUnseenCount() {
     return unseenCount;
+  },
+
+  /**
+   * Get the number of comments that haven't been rendered yet.
+   *
+   * @returns {number}
+   * @memberof module:navPanel
+   */
+  getNotRenderedCount() {
+    return notRenderedCount;
   },
 
   /**
@@ -418,22 +431,23 @@ const navPanel = {
   /**
    * Update the refresh button to show the number of comments added to the page since it was loaded.
    *
-   * @param {number} commentsCount
+   * @param {number} commentCount
    * @param {Map} commentsBySection
    * @param {boolean} areThereInteresting
    * @private
    * @memberof module:navPanel
    */
-  updateRefreshButton(commentsCount, commentsBySection, areThereInteresting) {
+  updateRefreshButton(commentCount, commentsBySection, areThereInteresting) {
+    notRenderedCount = commentCount;
     this.$refreshButton
       .empty()
-      .attr('title', generateTooltipText(commentsCount, commentsBySection));
-    if (commentsCount) {
+      .attr('title', generateTooltipText(commentCount, commentsBySection));
+    if (commentCount) {
       $('<span>')
         // Can't set the attribute to $refreshButton as its tooltip may have another direction.
         .attr('dir', 'ltr')
 
-        .text(`+${commentsCount}`)
+        .text(`+${commentCount}`)
         .appendTo(this.$refreshButton);
     }
     if (areThereInteresting) {

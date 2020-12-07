@@ -14,6 +14,7 @@ import navPanel from './navPanel';
 import userRegistry from './userRegistry';
 import { ElementsTreeWalker, TreeWalker } from './treeWalker';
 import {
+  calculateWordsOverlap,
   caseInsensitiveFirstCharPattern,
   dealWithLoadingBug,
   defined,
@@ -23,7 +24,6 @@ import {
   reorderArray,
   saveToLocalStorage,
   unhideText,
-  unique,
 } from './util';
 import { copyLink } from './modal.js';
 import {
@@ -41,36 +41,6 @@ import { reloadPage } from './boot';
 let thanks;
 
 /**
- * Calculates the proportion of the number of words (3 characters long minimum) present in both
- * strings to the total words count.
- *
- * @param {string} s1
- * @param {string} s2
- * @returns {number}
- * @private
- */
-function calculateWordsOverlap(s1, s2) {
-  const regexp = new RegExp(`[${cd.g.LETTER_PATTERN}]{3,}`, 'g');
-  const words1 = (s1.match(regexp) || []).filter(unique);
-  const words2 = (s2.match(regexp) || []).filter(unique);
-  if (!words1.length || !words2.length) {
-    return 0;
-  }
-
-  let total = words2.length;
-  let overlap = 0;
-  words1.forEach((word1) => {
-    if (words2.some((word2) => word2 === word1)) {
-      overlap++;
-    } else {
-      total++;
-    }
-  });
-
-  return overlap / total;
-}
-
-/**
  * Remove thanks older than 60 days.
  *
  * @param {object[]} data
@@ -80,7 +50,10 @@ function calculateWordsOverlap(s1, s2) {
 function cleanUpThanks(data) {
   const newData = Object.assign({}, data);
   Object.keys(newData).forEach((key) => {
-    if (newData[key].thankUnixTime < Date.now() - 60 * cd.g.SECONDS_IN_A_DAY * 1000) {
+    if (
+      !newData[key].thankUnixTime ||
+      newData[key].thankUnixTime < Date.now() - 60 * cd.g.SECONDS_IN_A_DAY * 1000
+    ) {
       delete newData[key];
     }
   });
@@ -188,11 +161,11 @@ export default class Comment extends CommentSkeleton {
     this.isDeleted = null;
 
     /**
-     * Should the comment be flashed when it appears in sight.
+     * Should the comment be flashed as updated when it appears in sight.
      *
      * @type {?boolean}
      */
-    this.isFlashOnSightSet = false;
+    this.isFlashNewOnSightSet = false;
   }
 
   /**
@@ -384,15 +357,14 @@ export default class Comment extends CommentSkeleton {
 
     if (this.author.isRegistered() && this.date && !this.isOwn) {
       if (!thanks) {
-        thanks = cleanUpThanks(getFromLocalStorage('convenientDiscussions-thanks') || {});
-        saveToLocalStorage('convenientDiscussions-thanks', thanks);
+        thanks = cleanUpThanks(getFromLocalStorage('thanks'));
+        saveToLocalStorage('thanks', thanks);
       }
 
       const isThanked = Object.keys(thanks).some((key) => (
         this.anchor === thanks[key].anchor &&
         calculateWordsOverlap(this.getText(), thanks[key].text) > 0.66
       ));
-
       if (isThanked) {
         this.thankButton = this.elementPrototypes.thankedButton.cloneNode(true);
       } else {
@@ -618,8 +590,23 @@ export default class Comment extends CommentSkeleton {
    * up/down comment buttons, or is scrolled to after pressing a navigation panel button).
    */
   highlightTarget() {
+    this.isTarget = true;
+
+    // We don't take the color from cd.g.COMMENT_UNDERLAY_TARGET_COLOR as it may be overriden by the
+    // user in their personal CSS.
+    this.flash($(document.documentElement).css('--cd-comment-underlay-target-color'), 1500, () => {
+      this.isTarget = false;
+    });
+  }
+
+  flash(color, delay, callback) {
     this.configureLayers();
-    if (!this.$underlay) return;
+    if (!this.$underlay) {
+      if (callback) {
+        callback();
+      }
+      return;
+    }
 
     const $elementsToAnimate = this.$underlay
       .add(this.$overlayContent)
@@ -628,70 +615,92 @@ export default class Comment extends CommentSkeleton {
       .css('background-image', 'none')
       .css('background-color', '');
     let finalColor = this.getCurrentBackgroundColor();
-    const $document = $(document.documentElement);
 
-    // We don't take the color from cd.g.COMMENT_UNDERLAY_TARGET_COLOR as it may be overriden by the
-    // user in their personal CSS.
-    const initialColor = $document.css('--cd-comment-underlay-target-color');
-
-    this.isTarget = true;
-    $elementsToAnimate.css('background-color', initialColor);
+    $elementsToAnimate.css('background-color', color);
     clearTimeout(this.unhighlightTimeout);
     this.unhighlightTimeout = setTimeout(() => {
-      // These comment properties may get assigned after the highlightTarget() call.
+      // These comment properties may get assigned after the flash() call.
       if (this.isFocused) {
-        finalColor = $document.css('--cd-comment-underlay-focused-color');
-      } else if (this.isNew) {
-        finalColor = $document.css('--cd-comment-underlay-new-color');
+        finalColor = $(document.documentElement).css('--cd-comment-underlay-focused-color');
+      } else if (this.isNew && !this.isOwn) {
+        finalColor = $(document.documentElement).css('--cd-comment-underlay-new-color');
       }
-      this.flash(initialColor, finalColor, () => {
-        this.isTarget = false;
-      })
-    }, 1500);
-  }
-
-  flash(initialColor, finalColor, callback) {
-    if (!finalColor) {
-      finalColor = this.getCurrentBackgroundColor();
-      if (finalColor === initialColor) {
+      if (finalColor === color) {
         finalColor = this.backgroundColor || 'rgba(0, 0, 0, 0)';
       }
-    }
 
-    const $elementsToAnimate = this.$underlay
-      .add(this.$overlayContent)
-      .add(this.$overlayGradient)
-      .stop()
-      .css('background-image', 'none')
-      .css('background-color', initialColor)
-      .animate(
-        { backgroundColor: finalColor },
-        400,
-        'swing',
-        () => {
-          if (callback) {
-            callback();
+      $elementsToAnimate
+        .stop()
+        .css('background-image', 'none')
+        .css('background-color', color)
+        .animate(
+          { backgroundColor: finalColor },
+          400,
+          'swing',
+          () => {
+            if (callback) {
+              callback();
+            }
+            $elementsToAnimate
+              .css('background-image', '')
+              .css('background-color', '');
           }
-          $elementsToAnimate
-            .css('background-image', '')
-            .css('background-color', '');
-        }
-      );
+        );
+    }, delay);
   }
 
+  /**
+   * Flash the comment as updated and add it to the seen rendered edits list kept in the local
+   * storage.
+   */
+  flashNew() {
+    this.flash($(document.documentElement).css('--cd-comment-underlay-new-color'), 500);
+    if (this.isEdited) {
+      const seenRenderedEdits = getFromLocalStorage('seenRenderedEdits');
+      const articleId = mw.config.get('wgArticleId');
+      seenRenderedEdits[articleId] = seenRenderedEdits[articleId] || {};
+      seenRenderedEdits[articleId][this.anchor] = {
+        htmlNoIds: this.htmlNoIds,
+        seenUnixTime: Date.now(),
+      };
+      saveToLocalStorage('seenRenderedEdits', seenRenderedEdits);
+    }
+  }
+
+  /**
+   * Flash the comment as updated when it appears in sight.
+   */
   flashNewOnSight() {
     if (this.isInViewport()) {
-      this.flash($(document.documentElement).css('--cd-comment-underlay-new-color'));
+      this.flashNew();
     } else {
-      this.isFlashOnSightSet = true;
+      this.isFlashNewOnSightSet = true;
     }
   }
 
-  addEditMark(isEditedSince, isNewVersionRendered, comparedRevisionId) {
-    if (isEditedSince) {
-      this.isEditedSincePreviousVisit = true;
-    } else {
-      this.isEdited = true;
+  markAsEdited(type, isNewVersionRendered, comparedRevisionId) {
+    let stringName;
+    switch (type) {
+      case 'edited':
+      default:
+        this.isEdited = true;
+        stringName = 'comment-edited';
+        break;
+
+      case 'editedSince':
+        this.isEditedSincePreviousVisit = true;
+        stringName = 'comment-editedsince';
+        break;
+
+      case 'deleted':
+        this.configureLayers();
+        if (!this.underlay) return;
+
+        this.underlay.classList.add('cd-commentUnderlay-deleted');
+
+        this.isDeleted = true;
+        stringName = 'comment-deleted';
+        break;
     }
 
     this.$elements
@@ -701,57 +710,87 @@ export default class Comment extends CommentSkeleton {
 
     let $refreshLink;
     if (!isNewVersionRendered) {
+      const keptData = type === 'deleted' ? {} : { commentAnchor: this.anchor };
       $refreshLink = $('<a>')
         .text(cd.s('comment-edited-refresh'))
         .on('click', () => {
-          reloadPage({ commentAnchor: this.anchor });
+          reloadPage(keptData);
         });
     }
 
     let $diffLink;
-    if (this.getSourcePage().name === cd.g.CURRENT_PAGE.name) {
-      const diffUrl = this.getUrl({
+    if (type !== 'deleted' && this.getSourcePage().name === cd.g.CURRENT_PAGE.name) {
+      const diffUrl = cd.g.CURRENT_PAGE.getUrl({
         oldid: mw.config.get('wgRevisionId'),
         diff: comparedRevisionId,
       });
       $diffLink = $('<a>')
-        .href(diffUrl)
-        .text(cd.s('comment-edited-diff'));
+        .attr('href', diffUrl)
+        .text(cd.s('comment-edited-diff'))
+        .on('click', (e) => {
+          e.preventDefault();
+          this.showDiff(comparedRevisionId);
+        });
     }
 
     const $span = $('<span>')
       .addClass('cd-editMark')
-      .append(cd.sParse(isEditedSince ? 'comment-editedsince' : 'comment-edited'));
+      .append(cd.sParse(stringName));
     if ($refreshLink) {
       $span.append(' ', $refreshLink);
+    } else {
+      $span.addClass('cd-editMark-newVersionRendered');
     }
     if ($diffLink) {
-      $span.append(cd.mws('dot-separator'), $diffLink);
+      $span.append($refreshLink ? cd.mws('dot-separator') : ' ', $diffLink);
     }
 
     this.$elements.last().append($span);
+
+    if (isNewVersionRendered) {
+      this.flashNewOnSight();
+    }
   }
 
-  markAsDeleted() {
-    if (this.isDeleted) return;
+  unmarkAsEdited(type) {
+    switch (type) {
+      case 'edited':
+      default:
+        this.isEdited = false;
+        break;
+      case 'deleted':
+        this.underlay.classList.remove('cd-commentUnderlay-deleted');
+        this.isDeleted = false;
+        break;
+    }
 
-    this.configureLayers();
-    if (!this.underlay) return;
+    this.$elements
+      .last()
+      .find('.cd-editMark')
+      .remove();
 
-    this.underlay.classList.add('cd-commentUnderlay-deleted');
-    this.isDeleted = true;
-  }
+    if (this.revisionId) {
+      delete this.revisionId;
 
-  unmarkAsDeleted() {
-    this.underlay.classList.remove('cd-commentUnderlay-deleted');
-    this.isDeleted = false;
+      if (this.isFlashNewOnSightSet) {
+        this.isFlashNewOnSightSet = false;
+      } else {
+        const seenRenderedEdits = getFromLocalStorage('seenRenderedEdits');
+        const articleId = mw.config.get('wgArticleId');
+        seenRenderedEdits[articleId] = seenRenderedEdits[articleId] || {};
+        delete seenRenderedEdits[articleId][this.anchor];
+        saveToLocalStorage('seenRenderedEdits', seenRenderedEdits);
+
+        this.flashNewOnSight();
+      }
+    }
   }
 
   /**
    * Scroll to the comment if it is not in the viewport.
    *
-   * @param {string} alignment One of the values that {@link $.fn.cdScrollTo}
-   *   accepts: `'top'`, `'center'`, or `'bottom'`.
+   * @param {string} alignment One of the values that {@link $.fn.cdScrollTo} accepts: `'top'`,
+   *   `'center'`, or `'bottom'`.
    */
   scrollIntoView(alignment) {
     const $target = this.editForm ? this.editForm.$element : this.$elements;
@@ -870,8 +909,8 @@ export default class Comment extends CommentSkeleton {
    * @throws {CdError}
    */
   async findAddingEdit(singleTimestamp = false, requestGender = false) {
-    if (singleTimestamp && this.addingEditOneTimestamp) {
-      return this.addingEditOneTimestamp;
+    if (singleTimestamp && this.addingEditSingleTimestamp) {
+      return this.addingEditSingleTimestamp;
     }
     if (!singleTimestamp && this.addingEdit) {
       return this.addingEdit;
@@ -908,7 +947,7 @@ export default class Comment extends CommentSkeleton {
       fromtitle: this.getSourcePage().getArchivedPage().name,
       fromrev: revision.revid,
       torelative: 'prev',
-      prop: ['diff', 'diffsize'],
+      prop: ['diff'],
       formatversion: 2,
     }).catch(handleApiReject));
 
@@ -1006,17 +1045,13 @@ export default class Comment extends CommentSkeleton {
     const result = bestMatch.revision;
 
     // Cache successful results.
-    if (singleTimestamp) {
-      this.addingEditOneTimestamp = result;
-    } else {
-      this.addingEdit = result;
-    }
+    this[singleTimestamp ? 'addingEditSingleTimestamp' : 'addingEdit'] = result;
 
     return result;
   }
 
   /**
-   * Get a diff link for a comment.
+   * Get a diff link for the comment.
    *
    * @returns {string}
    * @private
@@ -1105,7 +1140,8 @@ export default class Comment extends CommentSkeleton {
     }
 
     const url = this.getSourcePage().getArchivedPage().getUrl({ diff: edit.revid });
-    const $question = cd.util.wrap(cd.sParse('thank-confirm', this.author.name, this.author, url), {
+    const question = cd.sParse('thank-confirm', this.author.name, this.author, url);
+    const $question = cd.util.wrap(question, {
       tagName: 'div',
       targetBlank: true,
     });
@@ -1129,8 +1165,9 @@ export default class Comment extends CommentSkeleton {
       thanks[edit.revid] = {
         anchor: this.anchor,
         text: this.getText(),
+        thankUnixTime: Date.now(),
       };
-      saveToLocalStorage('convenientDiscussions-thanks', thanks);
+      saveToLocalStorage('thanks', thanks);
     } else {
       this.replaceButton(this.thankButton, thankButton, 'thank');
     }
@@ -1350,9 +1387,9 @@ export default class Comment extends CommentSkeleton {
       }
     }
 
-    if (this.isFlashOnSightSet) {
-      this.isFlashOnSightSet = false;
-      this.flash($(document.documentElement).css('--cd-comment-underlay-new-color'));
+    if (this.isFlashNewOnSightSet) {
+      this.isFlashNewOnSightSet = false;
+      this.flashNew();
     }
 
     if (registerAllInDirection && navPanel.getUnseenCount() !== 0) {
@@ -1424,6 +1461,12 @@ export default class Comment extends CommentSkeleton {
     this.elements = value.get();
   }
 
+  /**
+   * Replace an element that is one of the comment's elements with another element or HTML string.
+   *
+   * @param {Element|JQuery} element
+   * @param {Element|string} newElementOrHtml
+   */
   replaceElement(element, newElementOrHtml) {
     const nativeElement = element instanceof $ ? element.get(0) : element;
     let newElement;
@@ -2167,7 +2210,67 @@ export default class Comment extends CommentSkeleton {
    * @type {Page}
    */
   getSourcePage() {
-    return this.getSection() ? this.getSection().getSourcePage() : cd.g.CURRENT_PAGE;
+    const section = this.getSection();
+    return section ? section.getSourcePage() : cd.g.CURRENT_PAGE;
+  }
+
+  async showDiff(comparedRevisionId) {
+    if (dealWithLoadingBug('mediawiki.diff.styles')) return;
+
+    const compareRequest = cd.g.api.get({
+      action: 'compare',
+      fromtitle: this.getSourcePage().name,
+      fromrev: mw.config.get('wgRevisionId'),
+      torev: comparedRevisionId,
+      prop: ['diff'],
+      formatversion: 2,
+    }).catch(handleApiReject);
+
+    let compareData;
+    try {
+      ([compareData] = await Promise.all([
+        compareRequest,
+        this.getCode(),
+        mw.loader.using('mediawiki.diff.styles'),
+      ]));
+    } catch (e) {
+      // ...
+      return;
+    }
+
+    const pageCode = this.getSourcePage().code;
+    const inCode = this.inCode;
+    const newlinesBeforeComment = pageCode.slice(0, inCode.startIndex).match(/\n/g) || [];
+    const newlinesInComment = pageCode.slice(inCode.startIndex, inCode.endIndex).match(/\n/g) || [];
+    const startLineNumber = newlinesBeforeComment.length + 1;
+    const endLineNumber = startLineNumber + newlinesInComment.length;
+    const lineNumbers = [];
+    for (let i = startLineNumber; i <= endLineNumber; i++) {
+      lineNumbers.push(i);
+    }
+
+    const body = compareData?.compare?.body;
+    if (!body) {
+      // ...
+      return;
+    }
+
+    const $diff = $(cd.util.wrapDiffBody(body));
+    let currentLineNumber;
+    $diff.find('tr').each((i, tr) => {
+      const $tr = $(tr);
+      const $lineNo = $tr.children('diff-lineno').eq(1);
+      if ($lineNo.length) {
+        currentLineNumber = ($lineNo.text().match(/\d+/) || [])[0];
+        if (!currentLineNumber) {
+          throw new CdError({
+            type: 'parse',
+          });
+        }
+      }
+      if (!$tr.children('diff-marker').length) return;
+
+    });
   }
 
   /**

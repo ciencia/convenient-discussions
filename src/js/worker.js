@@ -106,9 +106,18 @@ function parse() {
     comment.section = section ? keepWorkerSafeValues(section) : null;
     if (comment.parent) {
       comment.parentAuthorName = comment.parent.authorName;
+      comment.parentAnchor = comment.parent.anchor;
       comment.toMe = comment.parent.isOwn;
     }
-    comment.rawHtml = comment.elements.map((element) => element.outerHTML).join('\n');
+    comment.text = comment.elements.map((element) => element.textContent).join('\n');
+    comment.html = comment.elements.map((element) => element.outerHTML).join('\n');
+    comment.htmlNoIds = comment.elements
+      .map((element) => {
+        element.removeAttribute('id');
+        element.removeAttribute('data-comment-id');
+        return element.outerHTML;
+      })
+      .join('\n');
     comment.elementsCount = comment.elements.length;
   });
   cd.debug.logAndResetTimer('prepare comments and sections');

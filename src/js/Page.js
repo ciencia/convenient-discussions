@@ -373,11 +373,11 @@ export default class Page {
    * Get a list of revisions of the page ("redirects" is set to true by default).
    *
    * @param {object} [customOptions={}]
-   * @param {object} [options]
-   * @param {boolean} [options.noTimers]
+   * @param {object} [options={}]
+   * @param {boolean} [options.noTimers=false]
    * @returns {Array}
    */
-  async getRevisions(customOptions = {}, { noTimers = false }) {
+  async getRevisions(customOptions = {}, { noTimers = false } = {}) {
     const defaultOptions = {
       action: 'query',
       titles: cd.g.CURRENT_PAGE.name,

@@ -495,7 +495,7 @@ async function processVisits(visitsRequest, memorizedUnseenCommentAnchors = []) 
     }
   }
 
-  let matchedTimeWithComment = false;
+  let haveMatchedTimeWithComment = false;
   if (thisPageVisits.length) {
     cd.comments.forEach((comment) => {
       /**
@@ -521,7 +521,7 @@ async function processVisits(visitsRequest, memorizedUnseenCommentAnchors = []) 
 
       const commentUnixTime = Math.floor(comment.date.getTime() / 1000);
       if (commentUnixTime <= currentUnixTime && currentUnixTime < commentUnixTime + 60) {
-        matchedTimeWithComment = true;
+        haveMatchedTimeWithComment = true;
       }
       if (commentUnixTime + 60 > thisPageVisits[0]) {
         comment.isNew = true;
@@ -541,7 +541,7 @@ async function processVisits(visitsRequest, memorizedUnseenCommentAnchors = []) 
   // minute to the current time if there is a comment with matched time. (Previously, the comment
   // time needed to be less than the current time which could result in missed comments if a comment
   // was sent the same minute when the page was loaded but after that moment.)
-  thisPageVisits.push(String(currentUnixTime + matchedTimeWithComment * 60));
+  thisPageVisits.push(String(currentUnixTime + haveMatchedTimeWithComment * 60));
 
   setVisits(visits);
 

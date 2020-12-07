@@ -17,8 +17,14 @@ import {
   isLoadingOverlayOn,
   reloadPage,
 } from './boot';
+import {
+  calculateWordsOverlap,
+  getFromLocalStorage,
+  keepWorkerSafeValues,
+  saveToLocalStorage,
+  unique,
+} from './util';
 import { getUserGenders } from './apiWrappers';
-import { keepWorkerSafeValues, unique } from './util';
 
 let lastCheckedRevisionId;
 let notifiedAbout;
@@ -60,7 +66,10 @@ function removeAlarmViaWorker() {
  * @private
  */
 async function checkForUpdates() {
-  if (document.hidden && !isBackgroundCheckArranged) {
+  // We need a value that wouldn't change during await's.
+  const documentHidden = document.hidden;
+
+  if (documentHidden && !isBackgroundCheckArranged) {
     const callback = () => {
       $(document).off('visibilitychange', callback);
       isBackgroundCheckArranged = false;
@@ -99,7 +108,7 @@ async function checkForUpdates() {
     }
   }
 
-  if (document.hidden) {
+  if (documentHidden) {
     setAlarmViaWorker(cd.g.BACKGROUND_UPDATE_CHECK_INTERVAL * 1000);
     isBackgroundCheckArranged = true;
   } else {
@@ -131,24 +140,130 @@ async function processRevisionsIfNeeded() {
 }
 
 /**
+ * Remove seen rendered edits data older than 60 days.
+ *
+ * @param {object[]} data
+ * @returns {object}
+ * @private
+ */
+function cleanUpSeenRenderedEdits(data) {
+  const newData = Object.assign({}, data);
+  Object.keys(newData).forEach((key) => {
+    const seenUnixTime = Object.keys(newData[key])[0].seenUnixTime;
+    if (seenUnixTime < Date.now() - 60 * cd.g.SECONDS_IN_A_DAY * 1000) {
+      delete newData[key];
+    }
+  });
+  return newData;
+}
+
+/**
+ * Map comments obtained from the current revision to the comments obtained from another revision
+ * (newer or older) by adding the `match` property to the first ones. The function also adds the
+ * `hasPoorMatch` property to the comments that have possible matches that are not good enough to
+ * confidently state a match.
+ *
+ * @param {CommentSkeleton[]} currentComments
+ * @param {CommentSkeleton[]} otherComments
+ * @private
+ */
+function mapComments(currentComments, otherComments) {
+  currentComments.forEach((currentComment) => {
+    delete currentComment.match;
+    delete currentComment.matchScore;
+    delete currentComment.hasPoorMatch;
+  });
+
+  otherComments.forEach((otherComment) => {
+    // Remove properties from the previous run.
+    let currentCommentsFiltered = currentComments.filter((currentComment) => (
+      currentComment.authorName === otherComment.authorName &&
+      currentComment.date.getTime() === otherComment.date.getTime()
+    ));
+    if (currentCommentsFiltered.length === 1) {
+      currentCommentsFiltered[0].match = otherComment;
+    } else if (currentCommentsFiltered.length > 1) {
+      let found;
+      currentCommentsFiltered
+        .map((currentComment) => {
+          const hasParentAnchorMatched = currentComment.parentAnchor === otherComment.parentAnchor;
+          const hasHeadlineMatched = (
+            currentComment.section?.headline === otherComment.section?.headline
+          );
+          const hasHtmlMatched = currentComment.htmlNoIds === otherComment.htmlNoIds;
+          const overlap = hasHtmlMatched ?
+            1 :
+            calculateWordsOverlap(currentComment.text, otherComment.text);
+          const score = (
+            hasParentAnchorMatched * 1 +
+            hasHeadlineMatched * 1 +
+            hasHtmlMatched * 1 +
+            overlap
+          );
+          return {
+            comment: currentComment,
+            score,
+          };
+        })
+        .filter((match) => match.score > 1.66)
+        .sort((match1, match2) => {
+          if (match2.score > match1.score) {
+            return 1;
+          } else if (match2.score < match1.score) {
+            return -1;
+          } else {
+            return 0;
+          }
+        })
+        .forEach((match) => {
+          if (!found && (!match.comment.match || match.comment.matchScore < match.score)) {
+            match.comment.match = otherComment;
+            match.comment.matchScore = match.score;
+            delete match.comment.hasPoorMatch;
+            found = true;
+          } else {
+            if (!match.comment.match) {
+              match.comment.hasPoorMatch = true;
+            }
+          }
+        });
+    }
+  });
+}
+
+/**
  * Check if there are changes made to the currently displayed comments since the previous visit.
  *
  * @private
  */
-async function checkForEditsSincePreviousVisit() {
+function checkForEditsSincePreviousVisit() {
   const oldComments = revisionData[previousVisitRevisionId].comments;
-  const currentComments = revisionData[mw.config.get('wgRevisionId')].comments;
+  const revisionId = mw.config.get('wgRevisionId');
+  const currentComments = revisionData[revisionId].comments;
+
+  mapComments(currentComments, oldComments);
+
+  const seenRenderedEdits = cleanUpSeenRenderedEdits(getFromLocalStorage('seenRenderedEdits'));
+  const articleId = mw.config.get('wgArticleId');
+
   currentComments.forEach((currentComment) => {
-    const oldComment = oldComments.find((oldComment) => currentComment.anchor === oldComment.anchor);
+    const oldComment = currentComment.match;
     if (oldComment) {
-      if (oldComment.rawHtml !== currentComment.rawHtml) {
+      const seenHtmlNoIds = seenRenderedEdits[articleId]?.[currentComment.anchor]?.htmlNoIds;
+      if (
+        oldComment.htmlNoIds !== currentComment.htmlNoIds &&
+        seenHtmlNoIds !== currentComment.htmlNoIds
+      ) {
         const comment = Comment.getCommentByAnchor(currentComment.anchor);
         if (!comment) return;
 
-        comment.addEditMark(true, true, previousVisitRevisionId);
+        comment.markAsEdited('editedSince', true, previousVisitRevisionId);
       }
     }
   });
+
+  delete seenRenderedEdits[articleId];
+  saveToLocalStorage('seenRenderedEdits', seenRenderedEdits);
 }
 
 /**
@@ -156,40 +271,44 @@ async function checkForEditsSincePreviousVisit() {
  *
  * @private
  */
-async function checkForNewEdits() {
+function checkForNewEdits() {
   const newComments = revisionData[lastCheckedRevisionId].comments;
   const currentComments = revisionData[mw.config.get('wgRevisionId')].comments;
+
+  mapComments(currentComments, newComments);
+
   currentComments.forEach((currentComment) => {
-    const newComment = newComments
-      .find((newComment) => currentComment.anchor === newComment.anchor);
+    const newComment = currentComment.match;
     if (newComment) {
       const comment = Comment.getCommentByAnchor(currentComment.anchor);
       if (!comment) return;
 
-      if (newComment.rawHtml !== currentComment.rawHtml) {
-        if (comment.$elements.length === 1 && newComment.elementsCount === 1) {
-          comment.replaceElement(comment.$elements.first(), newComment.rawHtml);
-          mw.hook('wikipage.content').add(comment.$elements);
-          comment.addEditMark(false, true, lastCheckedRevisionId);
-          comment.flashNewOnSight();
-        } else {
-          comment.addEditMark(false, false, lastCheckedRevisionId);
+      if (comment.isDeleted) {
+        comment.unmarkAsEdited('deleted');
+      }
+      if (newComment.htmlNoIds !== currentComment.htmlNoIds) {
+        // The comment may have already been updated previously.
+        if (!comment.revisionId || comment.htmlNoIds !== newComment.htmlNoIds) {
+          if (comment.$elements.length === 1 && newComment.elementsCount === 1) {
+            comment.replaceElement(comment.$elements, newComment.html);
+            comment.$elements.attr('data-comment-id', comment.id);
+            delete comment.cachedText;
+            mw.hook('wikipage.content').add(comment.$elements);
+            comment.revisionId = lastCheckedRevisionId;
+            comment.htmlNoIds = newComment.htmlNoIds;
+            comment.markAsEdited('edited', true, lastCheckedRevisionId);
+          } else {
+            comment.markAsEdited('edited', false, lastCheckedRevisionId);
+          }
         }
       } else if (comment.isEdited) {
-        comment.isEdited = false;
-        comment.$elements
-          .last()
-          .find('.cd-editMark')
-          .remove();
+        comment.unmarkAsEdited('edited');
       }
-      if (comment.isDeleted) {
-        comment.unmarkAsDeleted();
-      }
-    } else {
+    } else if (!currentComment.hasPoorMatch) {
       const comment = Comment.getCommentByAnchor(currentComment.anchor);
-      if (!comment) return;
+      if (!comment || comment.isDeleted) return;
 
-      comment.markAsDeleted();
+      comment.markAsEdited('deleted');
     }
   });
 }
@@ -414,12 +533,10 @@ function isPageStillOutdated(newRevisionId) {
 async function processComments(comments, revisionId) {
   comments.forEach((comment) => {
     comment.author = userRegistry.getUser(comment.authorName);
-    delete comment.authorName;
     if (comment.parentAuthorName) {
       comment.parent = {
         author: userRegistry.getUser(comment.parentAuthorName),
       };
-      delete comment.parentAuthorName;
     }
   });
 
