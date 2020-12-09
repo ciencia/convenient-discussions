@@ -18,6 +18,7 @@ import {
   reloadPage,
 } from './boot';
 import {
+  areObjectsEqual,
   calculateWordsOverlap,
   getFromLocalStorage,
   keepWorkerSafeValues,
@@ -178,6 +179,8 @@ function mapComments(currentComments, otherComments) {
     // Remove properties from the previous run.
     let currentCommentsFiltered = currentComments.filter((currentComment) => (
       currentComment.authorName === otherComment.authorName &&
+      currentComment.date &&
+      otherComment.date &&
       currentComment.date.getTime() === otherComment.date.getTime()
     ));
     if (currentCommentsFiltered.length === 1) {
@@ -190,7 +193,7 @@ function mapComments(currentComments, otherComments) {
           const hasHeadlineMatched = (
             currentComment.section?.headline === otherComment.section?.headline
           );
-          const hasHtmlMatched = currentComment.htmlNoIds === otherComment.htmlNoIds;
+          const hasHtmlMatched = currentComment.innerHtml === otherComment.innerHtml;
           const overlap = hasHtmlMatched ?
             1 :
             calculateWordsOverlap(currentComment.text, otherComment.text);
@@ -249,10 +252,10 @@ function checkForEditsSincePreviousVisit() {
   currentComments.forEach((currentComment) => {
     const oldComment = currentComment.match;
     if (oldComment) {
-      const seenHtmlNoIds = seenRenderedEdits[articleId]?.[currentComment.anchor]?.htmlNoIds;
+      const seenInnerHtml = seenRenderedEdits[articleId]?.[currentComment.anchor]?.innerHtml;
       if (
-        oldComment.htmlNoIds !== currentComment.htmlNoIds &&
-        seenHtmlNoIds !== currentComment.htmlNoIds
+        oldComment.innerHtml !== currentComment.innerHtml &&
+        seenInnerHtml !== currentComment.innerHtml
       ) {
         const comment = Comment.getCommentByAnchor(currentComment.anchor);
         if (!comment) return;
@@ -286,16 +289,21 @@ function checkForNewEdits() {
       if (comment.isDeleted) {
         comment.unmarkAsEdited('deleted');
       }
-      if (newComment.htmlNoIds !== currentComment.htmlNoIds) {
+      if (newComment.innerHtml !== currentComment.innerHtml) {
         // The comment may have already been updated previously.
-        if (!comment.revisionId || comment.htmlNoIds !== newComment.htmlNoIds) {
-          if (comment.$elements.length === 1 && newComment.elementsCount === 1) {
-            comment.replaceElement(comment.$elements, newComment.html);
-            comment.$elements.attr('data-comment-id', comment.id);
+        if (!comment.revisionId || comment.innerHtml !== newComment.innerHtml) {
+          const elementTagNames = Array.from(comment.$elements).map((element) => element.tagName);
+          if (areObjectsEqual(elementTagNames, newComment.elementTagNames)) {
+            newComment.elementHtmls.forEach((html, i) => {
+              comment.replaceElement(comment.$elements.eq(i), html);
+            });
+            comment.$elements.first()
+              .attr('id', comment.anchor)
+              .attr('data-comment-id', comment.id);
             delete comment.cachedText;
             mw.hook('wikipage.content').add(comment.$elements);
             comment.revisionId = lastCheckedRevisionId;
-            comment.htmlNoIds = newComment.htmlNoIds;
+            comment.innerHtml = newComment.innerHtml;
             comment.markAsEdited('edited', true, lastCheckedRevisionId);
           } else {
             comment.markAsEdited('edited', false, lastCheckedRevisionId);
@@ -657,9 +665,10 @@ const updateChecker = {
   /**
    * Initialize the update checker.
    *
+   * @param {Promise} visitsRequest
    * @memberof module:updateChecker
    */
-  init() {
+  async init(visitsRequest) {
     if (!cd.g.worker) return;
 
     notifiedAbout = [];
@@ -674,6 +683,9 @@ const updateChecker = {
     }
 
     setAlarmViaWorker(cd.g.UPDATE_CHECK_INTERVAL * 1000);
+
+    // It is processed in processPage~processVisits.
+    await visitsRequest;
 
     if (cd.g.previousVisitUnixTime) {
       processRevisionsIfNeeded();

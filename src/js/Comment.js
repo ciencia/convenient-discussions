@@ -660,7 +660,7 @@ export default class Comment extends CommentSkeleton {
       const articleId = mw.config.get('wgArticleId');
       seenRenderedEdits[articleId] = seenRenderedEdits[articleId] || {};
       seenRenderedEdits[articleId][this.anchor] = {
-        htmlNoIds: this.htmlNoIds,
+        innerHtml: this.innerHtml,
         seenUnixTime: Date.now(),
       };
       saveToLocalStorage('seenRenderedEdits', seenRenderedEdits);
@@ -720,12 +720,7 @@ export default class Comment extends CommentSkeleton {
 
     let $diffLink;
     if (type !== 'deleted' && this.getSourcePage().name === cd.g.CURRENT_PAGE.name) {
-      const diffUrl = cd.g.CURRENT_PAGE.getUrl({
-        oldid: mw.config.get('wgRevisionId'),
-        diff: comparedRevisionId,
-      });
       $diffLink = $('<a>')
-        .attr('href', diffUrl)
         .text(cd.s('comment-edited-diff'))
         .on('click', async (e) => {
           e.preventDefault();
@@ -734,9 +729,11 @@ export default class Comment extends CommentSkeleton {
             await this.showDiff(comparedRevisionId);
           } catch (e) {
             let text = cd.s('comment-edited-diff-error');
-            const { type } = e.data;
-            if (type === 'network') {
-              text += ' ' + cd.sParse('error-network');
+            if (e instanceof CdError) {
+              const { type } = e.data;
+              if (type === 'network') {
+                text += ' ' + cd.sParse('error-network');
+              }
             }
             mw.notify(text, { type: 'error' });
           }
@@ -943,17 +940,9 @@ export default class Comment extends CommentSkeleton {
     if (requestGender && this.author.isRegistered()) {
       genderRequest = getUserGenders([this.author]);
     }
-    const [revisionsResp] = await Promise.all([revisionsRequest, genderRequest].filter(defined));
+    const [revisions] = await Promise.all([revisionsRequest, genderRequest].filter(defined));
 
-    const revisions = revisionsResp.query?.pages?.[0]?.revisions;
-    if (!revisions) {
-      throw new CdError({
-        type: 'api',
-        code: 'noData',
-      });
-    }
-
-    const compareRequests = revisions.map((revision) => cd.g.api.get({
+    const compareRequests = revisions.map((revision) => cd.g.api.post({
       action: 'compare',
       fromtitle: this.getSourcePage().getArchivedPage().name,
       fromrev: revision.revid,
@@ -962,13 +951,12 @@ export default class Comment extends CommentSkeleton {
       formatversion: 2,
     }).catch(handleApiReject));
 
-    const compareData = await Promise.all(compareRequests);
+    const compareResps = await Promise.all(compareRequests);
     const regexp = /<td colspan="2" class="diff-empty">&#160;<\/td>\s*<td class="diff-marker">\+<\/td>\s*<td class="diff-addedline"><div>(?!=)(.+?)<\/div><\/td>\s*<\/tr>/g;
     let thisTextAndSignature = this.getText(false) + ' ' + this.$signature.get(0).innerText;
     const matches = [];
-    for (let i = 0; i < compareData.length; i++) {
-      const data = compareData[i];
-      const body = data?.compare?.body;
+    for (let i = 0; i < compareResps.length; i++) {
+      const body = compareResps[i]?.compare?.body;
       if (!body) continue;
 
       // Compare diff _parts_ with added text in case multiple comments were added with the edit.
@@ -2228,33 +2216,56 @@ export default class Comment extends CommentSkeleton {
   async showDiff(comparedRevisionId) {
     if (dealWithLoadingBug('mediawiki.diff.styles')) return;
 
-    const compareRequest = cd.g.api.get({
+    let revisionIdLesser = Math.min(mw.config.get('wgRevisionId'), comparedRevisionId);
+    let revisionIdGreater = Math.max(mw.config.get('wgRevisionId'), comparedRevisionId);
+
+    const revisionsRequest = cd.g.api.post({
+      action: 'query',
+      revids: [revisionIdLesser, revisionIdGreater],
+      prop: 'revisions',
+      rvslots: 'main',
+      rvprop: ['ids', 'content'],
+      redirects: true,
+      formatversion: 2,
+    }).catch(handleApiReject);
+
+    const compareRequest = cd.g.api.post({
       action: 'compare',
       fromtitle: this.getSourcePage().name,
-      fromrev: mw.config.get('wgRevisionId'),
-      torev: comparedRevisionId,
+      fromrev: revisionIdLesser,
+      torev: revisionIdGreater,
       prop: ['diff'],
       formatversion: 2,
     }).catch(handleApiReject);
 
-    let [compareData] = await Promise.all([
+    let [revisionsResp, compareResp] = await Promise.all([
+      revisionsRequest,
       compareRequest,
-      this.getCode(),
       mw.loader.using('mediawiki.diff.styles'),
     ]);
 
-    const pageCode = this.getSourcePage().code;
-    const inCode = this.inCode;
-    const newlinesBeforeComment = pageCode.slice(0, inCode.startIndex).match(/\n/g) || [];
-    const newlinesInComment = pageCode.slice(inCode.startIndex, inCode.endIndex).match(/\n/g) || [];
-    const startLineNumber = newlinesBeforeComment.length + 1;
-    const endLineNumber = startLineNumber + newlinesInComment.length;
-    const lineNumbers = [];
-    for (let i = startLineNumber; i <= endLineNumber; i++) {
-      lineNumbers.push(i);
+    const revisions = revisionsResp.query?.pages?.[0]?.revisions;
+    if (!revisions) {
+      throw new CdError({
+        type: 'api',
+        code: 'noData',
+      });
     }
 
-    const body = compareData?.compare?.body;
+    const lineNumbers = [[], []];
+    revisions.forEach((revision, i) => {
+      const pageCode = revision.slots.main.content;
+      const inCode = this.locateInCode(pageCode);
+      const newlinesBeforeComment = pageCode.slice(0, inCode.startIndex).match(/\n/g) || [];
+      const newlinesInComment = pageCode.slice(inCode.startIndex, inCode.endIndex).match(/\n/g) || [];
+      const startLineNumber = newlinesBeforeComment.length + 1;
+      const endLineNumber = startLineNumber + newlinesInComment.length;
+      for (let j = startLineNumber; j <= endLineNumber; j++) {
+        lineNumbers[i].push(j);
+      }
+    });
+
+    const body = compareResp?.compare?.body;
     if (!body) {
       throw new CdError({
         type: 'api',
@@ -2263,26 +2274,32 @@ export default class Comment extends CommentSkeleton {
     }
 
     const $diff = $(cd.util.wrapDiffBody(body));
-    let currentLineNumber;
+    let currentLineNumbers = [];
     let cleanDiffBody = '';
     $diff.find('tr').each((i, tr) => {
       const $tr = $(tr);
-      const $lineNo = $tr.children('.diff-lineno').eq(1);
-      if ($lineNo.length) {
-        currentLineNumber = Number(($lineNo.text().match(/\d+/) || [])[0]);
-        if (!currentLineNumber) {
+      const $lineNumbers = $tr.children('.diff-lineno');
+      for (let j = 0; j < $lineNumbers.length; j++) {
+        currentLineNumbers[j] = Number(($lineNumbers.text().match(/\d+/) || [])[0]);
+        if (!currentLineNumbers[j]) {
           throw new CdError({
             type: 'parse',
           });
         }
-        return;
+        if (j === 1) return;
       }
       if (!$tr.children('.diff-marker').length) return;
-      if (!$tr.children().eq(2).hasClass('diff-empty')) {
-        if (lineNumbers.includes(currentLineNumber)) {
-          cleanDiffBody += $tr.html();
+      let addToDiff = false;
+      for (let j = 0; j < 2; j++) {
+        if (!$tr.children().eq(j * 2).hasClass('diff-empty')) {
+          if (lineNumbers[j].includes(currentLineNumbers[j])) {
+            addToDiff = true;
+          }
+          currentLineNumbers[j]++;
         }
-        currentLineNumber++;
+      }
+      if (addToDiff) {
+        cleanDiffBody += $tr.prop('outerHTML');
       }
     });
     const $cleanDiff = $(cd.util.wrapDiffBody(cleanDiffBody));

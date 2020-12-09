@@ -786,10 +786,12 @@ export default async function processPage(keptData = {}) {
     } else {
       navPanel.reset();
     }
-    updateChecker.init();
 
     // New comments highlighting
     processVisits(visitsRequest, keptData.unseenCommentAnchors);
+
+    // This should be below processVisits() because of updateChecker.processRevisionsIfNeeded.
+    updateChecker.init(visitsRequest);
   } else {
     if (navPanel.isMounted()) {
       navPanel.unmount();

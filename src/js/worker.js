@@ -110,15 +110,30 @@ function parse() {
       comment.toMe = comment.parent.isOwn;
     }
     comment.text = comment.elements.map((element) => element.textContent).join('\n');
-    comment.html = comment.elements.map((element) => element.outerHTML).join('\n');
-    comment.htmlNoIds = comment.elements
+    comment.elementHtmls = comment.elements
       .map((element) => {
         element.removeAttribute('id');
         element.removeAttribute('data-comment-id');
         return element.outerHTML;
-      })
-      .join('\n');
-    comment.elementsCount = comment.elements.length;
+      });
+
+    /*
+      We can't use outerHTML for comparing comment revisions as the difference may be in div vs. dd
+      (li) tags in this case: This creates a dd tag.
+
+        : Comment. [signature]
+
+      This creates a div tag for the first comment.
+
+        : Comment. [signature]
+        :: Reply. [signature]
+
+      So the HTML is "<dd><div>...</div><dl>...</dl></dd>". A newline also appears before </div>, so
+      we need to trim.
+     */
+    comment.innerHtml = comment.elements.map((element) => element.innerHTML).join('\n').trim();
+
+    comment.elementTagNames = comment.elements.map((element) => element.tagName);
   });
   cd.debug.logAndResetTimer('prepare comments and sections');
 }

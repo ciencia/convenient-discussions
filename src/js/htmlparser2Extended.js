@@ -111,6 +111,12 @@ Object.defineProperty(Element.prototype, 'textContent', {
   },
 });
 
+Object.defineProperty(Element.prototype, 'innerHTML', {
+  get: function () {
+    return DomUtils.getInnerHTML(this);
+  },
+});
+
 Object.defineProperty(Element.prototype, 'outerHTML', {
   get: function () {
     return DomUtils.getOuterHTML(this);
